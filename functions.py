@@ -1,18 +1,67 @@
 from datetime import datetime
+from tkinter import ttk
 
 COLORES = {
     "blanco": "#ffffff",
     "negro": "#000000",
     "naranja": "#f39c12",
     "rojo": "#c0392b",
-    "verde": "#2ecc71",
-    "azul": "#3498db",
-    "azul_claro": "#0000FF",
+    "rojo2": "#dc3545",
+    "rojo_hover": "#c82333",
     "rojo_oscuro": "#e74c3c",
+    "verde_claro": "#90EE90",
+    "verde": "#2ecc71",
+    "verde2": "#28a745",
+    "verde_hover": "#218838",
+    "azul": "#3498db",
+    "azul_claro": "#e3f2fd",
+    "azul_oscuro": "#0056b3",
     "gris_claro": "#d3d3d3",
-    "gris_oscuro": "#7d7d7d",
-    "verde_claro": "#90EE90"
+    "gris_oscuro": "#7d7d7d"  
 }
+
+
+def configure_styles():
+    """Configura los estilos para ttk widgets."""
+    style = ttk.Style()
+
+    # Tema general
+    style.theme_use("clam")
+
+    # Estilo de Labels
+    style.configure("TLabel", font=("Segoe UI", 11, "bold"), background=COLORES["rojo_oscuro"], foreground=COLORES["blanco"])
+
+    # Estilo de Entries
+    style.configure("TEntry", font=("Segoe UI", 11), padding=8, relief="flat", fieldbackground=COLORES["blanco"])
+    style.map("TEntry", background=[("focus", COLORES["azul_claro"])])  # Azul claro en foco
+
+    # Estilo de combobox
+    style.configure("TCombobox", font=("Segoe UI", 11), padding=4, relief="flat")
+
+    # Estilo de Botones (flat con hover)
+    style.configure("Flat.TButton", font=("Segoe UI", 11, "bold"), padding=10, foreground="white", background="#007bff", relief="flat")
+    style.map("Flat.TButton", background=[("active", COLORES["azul_oscuro"])])  # Azul más oscuro al pasar el ratón
+
+    #Button
+    # Estilo verde
+    style.configure("Green.TButton", font=("Segoe UI", 11, "bold"), padding=5, foreground=COLORES["blanco"], background=COLORES["verde"])
+    style.map("Green.TButton", background=[("active", COLORES["verde_hover"])])
+
+    # Estilo rojo
+    style.configure("Red.TButton", font=("Segoe UI", 11, "bold"), padding=5, foreground=COLORES["blanco"], background=COLORES["rojo"])
+    style.map("Red.TButton", background=[("active", COLORES["rojo_hover"])])
+
+    style.configure("TButton", font=("Segoe UI", 11, "bold"), padding=5, relief="flat", 
+                    background=COLORES["rojo_oscuro"], foreground=COLORES["blanco"])
+    style.map("TButton", background=[("active", COLORES["rojo"])] )
+
+
+
+
+
+
+
+
 
 def procesar_nombre(name):
     """Procesa un string eliminando 'de' y 'los', y eliminando las dos últimas palabras si quedan tres o más.

@@ -5,7 +5,7 @@ import pandas as pd
 conexion = sqlite3.connect("data/treeview_data.db")
 
 # Cargar los datos en un DataFrame de pandas
-df = pd.read_sql_query("SELECT * FROM registros WHERE user = 'DEBORA MACIAS'", conexion)
+df = pd.read_sql_query("SELECT * FROM registros WHERE user = 'CLARA BARNES'", conexion)
 
 # Mostrar el DataFrame
 print(df)

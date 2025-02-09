@@ -29,7 +29,7 @@ class TasksAdmin:
                                 show="headings", height=10)
 
         # Estado de ordenamiento (inicialmente vacío)
-        self.orden_actual = {col: False for col in ("checkbox","formatted_time","empresa","concepto","formatted_date")}
+        self.orden_actual = {col: False for col in ("formatted_time","empresa","concepto","formatted_date")}
 
         # Encabezados de las columnas visibles con evento de ordenación
         self.tree.heading("checkbox", text="✓", command=self.toggle_all_checkboxes)
@@ -80,10 +80,10 @@ class TasksAdmin:
         self.bottom_frame = tk.Frame(self.frame, bg=COLORES["rojo_oscuro"], bd=2, relief="ridge")
 
         # Crear botones con los estilos personalizados
-        delete_button = ttk.Button(self.bottom_frame, text="🗑 Borrar", command=self.borrar, style="Borrar.TButton")
+        delete_button = ttk.Button(self.bottom_frame, text="🗑 Borrar", command=self.borrar)
         delete_button.pack(side=tk.LEFT, padx=10, pady=10)
 
-        imputar_button = ttk.Button(self.bottom_frame, text="✅ Imputar", command=self.imputar, style="Imputar.TButton")
+        imputar_button = ttk.Button(self.bottom_frame, text="✅ Imputar", command=self.imputar)
         imputar_button.pack(side=tk.RIGHT, padx=10, pady=10)
         
         # Inicialmente ocultar el frame
@@ -217,10 +217,6 @@ class TasksAdmin:
         Ordena el Treeview por la columna seleccionada alternando entre ascendente y descendente.
         Maneja tiempos como enteros y fechas como objetos datetime para ordenarlos correctamente.
         """
-        #for item in self.tree.get_children(""):
-            # valor = self.tree.set(item, "date")
-            # print(f"Valor para {item}: {valor}")  # Depurar los valores
-
         # Determinar la columna de ordenación real
         if columna == "formatted_time":
             columna_orden = "time"  # Ordenar por la columna oculta 'time'
@@ -228,6 +224,10 @@ class TasksAdmin:
             columna_orden = "date"  # Ordenar por la columna oculta 'date'
         else:
             columna_orden = columna  # Ordenar por la columna visible directamente
+
+        for item in self.tree.get_children(""):
+            valor = self.tree.set(item, columna_orden)
+            print(f"Item: {item}, Valor en columna '{columna_orden}': {valor}")
 
         # Obtener todos los elementos del Treeview
         items = []
@@ -417,6 +417,7 @@ class TasksAdmin:
         """
         # Fecha actual
         fecha_actual = return_fecha_actual()
+        print(fecha_actual)
 
         # Insertar en SQLite
         self.cursor.execute("""
@@ -432,11 +433,10 @@ class TasksAdmin:
 
         # Insertar en el Treeview con columnas visibles y ocultas
         self.tree.insert(
-            "", 0, iid=str(row_id),
+            "", 0, iid=str(row_id), 
             values=(" ",tiempo_formateado, empresa, concepto, fecha_formateada, int(time), fecha_actual))
-
+        print(f"Insertando fila en Treeview: {(' ', tiempo_formateado, empresa, concepto, fecha_formateada, int(time), fecha_actual)}")
         return row_id
-
 
 
     def time_update(self, id_registro, time):
@@ -463,8 +463,8 @@ class TasksAdmin:
         empresa_actual = valores_actuales[2]  # Mantener el valor de 'empresa'
         concepto_actual = valores_actuales[3]  # Mantener el valor de 'concepto'
         fecha_formateada = valores_actuales[4]  # Mantener el valor de 'fecha'
-        date = valores_actuales[5]
-
+        date = valores_actuales[6]
+        
         # Actualizar la base de datos
         self.cursor.execute("""
             UPDATE registros
@@ -596,21 +596,23 @@ class TasksAdmin:
         if desde_menu:
             # Borrar solo el elemento seleccionado del menú contextual
             if self.seleccionado:
-                # self.cursor.execute("DELETE FROM registros WHERE id = ?", (self.seleccionado,))
-                # self.conexion.commit()º
-                # self.tree.delete(self.seleccionado)
-                # self.seleccionado = None
+                self.cursor.execute("DELETE FROM registros WHERE id = ?", (self.seleccionado,))
+                self.conexion.commit()
+                self.tree.delete(self.seleccionado)
+                self.seleccionado = None
                 print("borrado desde el menú contextual:", self.seleccionado)
         else:
             # Borrar todos los elementos con checkbox marcado
             items_a_borrar = [item for item in self.tree.get_children() if self.tree.item(item, "values")[0] == "✔"]
 
             if items_a_borrar:
-                # self.cursor.executemany("DELETE FROM registros WHERE id = ?", [(item,) for item in items_a_borrar])
-                # self.conexion.commit()
-                # for item in items_a_borrar:
-                #     self.tree.delete(item)
+                self.cursor.executemany("DELETE FROM registros WHERE id = ?", [(item,) for item in items_a_borrar])
+                self.conexion.commit()
+                for item in items_a_borrar:
+                    self.tree.delete(item)
                 print("borrados desde checkbox los items: ", items_a_borrar)
+
+        self.imprimir_items_treeview()
 
     def imputar(self, desde_menu=False):
         """
@@ -648,5 +650,15 @@ class TasksAdmin:
                 # for item in items_a_imputar:
                 #     self.tree.delete(item)
                 print("imputados desde checkbox los items: ", items_a_imputar)
+
+
+    def imprimir_items_treeview(self):
+        """
+        Imprime todos los elementos del Treeview para depuración.
+        """
+        print("Estado actual del Treeview:")
+        for item in self.tree.get_children(""):
+            valores = self.tree.item(item, "values")  # Obtiene los valores de cada columna
+            print(f"Item ID: {item}, Valores: {valores}")
 
 
