@@ -2,11 +2,32 @@ import sqlite3, json
 from datetime import datetime
 import tkinter as tk
 from tkinter import ttk, Menu
-#import styles
 from functions import formatear_fecha, return_fecha_actual, seconds_to_string
 from functions import COLORES
 
 db_path = r"data/treeview_data.db"
+
+COLUMNAS_TREE = (
+        "checkbox",
+        "tiempo",
+        "empresa",
+        "concepto",
+        "fecha_creacion",
+        "time",
+        "date",
+    )
+
+COLUMNAS_DB = (
+        "id",
+        "tiempo",
+        "empresa",
+        "concepto",
+        "fecha_creacion",
+        "fecha_imputacion",
+        "state",
+        "user",
+        "departamento",
+    )
 
 class TasksAdmin:
     def __init__(self, root, app, manager):
@@ -25,26 +46,26 @@ class TasksAdmin:
         self.frame = ttk.Frame(root)
         
         # Definir columnas con sus nombres adecuados (ahora "checkbox" es el primer elemento)
-        self.tree = ttk.Treeview(self.frame, columns=("checkbox", "formatted_time", "empresa", "concepto", "formatted_date", "time", "date"),
+        self.tree = ttk.Treeview(self.frame, columns=COLUMNAS_TREE,
                                 show="headings", height=10)
 
         # Estado de ordenamiento (inicialmente vacío)
-        self.orden_actual = {col: False for col in ("formatted_time","empresa","concepto","formatted_date")}
+        self.orden_actual = {col: False for col in ("tiempo","empresa","concepto","fecha_creacion")}
 
         # Encabezados de las columnas visibles con evento de ordenación
         self.tree.heading("checkbox", text="✓", command=self.toggle_all_checkboxes)
-        self.tree.heading("formatted_time", text="Tiempo", command=lambda: self.ordenar_treeview("formatted_time"))
+        self.tree.heading("tiempo", text="Tiempo", command=lambda: self.ordenar_treeview("tiempo"))
         self.tree.heading("empresa", text="Empresa", command=lambda: self.ordenar_treeview("empresa"))
         self.tree.heading("concepto", text="Concepto", command=lambda: self.ordenar_treeview("concepto"))
-        self.tree.heading("formatted_date", text="Fecha", command=lambda: self.ordenar_treeview("formatted_date"))
+        self.tree.heading("fecha_creacion", text="Fecha", command=lambda: self.ordenar_treeview("fecha_creacion"))
 
         
         # Configuración de columnas visibles con ancho mínimo y stretch=False
         self.tree.column("checkbox", width=20, minwidth=20, anchor="center", stretch=False)
-        self.tree.column("formatted_time", width=80, minwidth=80, anchor="center", stretch=False)
+        self.tree.column("tiempo", width=80, minwidth=80, anchor="center", stretch=False)
         self.tree.column("empresa", width=150, minwidth=150, anchor="center", stretch=True)
         self.tree.column("concepto", width=150, minwidth=150, anchor="center", stretch=False)
-        self.tree.column("formatted_date", width=100, minwidth=100, anchor="center", stretch=False)
+        self.tree.column("fecha_creacion", width=100, minwidth=100, anchor="center", stretch=False)
 
         # Configuración de columnas ocultas (tiempo y fecha originales)
         self.tree.column("time", width=0, stretch=False)  # Oculta la columna original del tiempo
@@ -218,9 +239,9 @@ class TasksAdmin:
         Maneja tiempos como enteros y fechas como objetos datetime para ordenarlos correctamente.
         """
         # Determinar la columna de ordenación real
-        if columna == "formatted_time":
+        if columna == "tiempo":
             columna_orden = "time"  # Ordenar por la columna oculta 'time'
-        elif columna == "formatted_date":
+        elif columna == "fecha_creacion":
             columna_orden = "date"  # Ordenar por la columna oculta 'date'
         else:
             columna_orden = columna  # Ordenar por la columna visible directamente
@@ -373,8 +394,8 @@ class TasksAdmin:
                 tiempo TEXT,
                 empresa TEXT,
                 concepto TEXT,
-                fecha_creacion TEXT,
-                fecha_imputacion TEXT,
+                fecha_creacion DATETIME,
+                fecha_imputacion DATETIME,
                 state TEXT,
                 user TEXT,
                 departamento TEXT
@@ -420,10 +441,15 @@ class TasksAdmin:
         print(fecha_actual)
 
         # Insertar en SQLite
-        self.cursor.execute("""
-            INSERT INTO registros (tiempo, empresa, concepto, fecha_creacion, fecha_imputacion, state, user, departamento)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (time, empresa, concepto, fecha_actual, None, "working", self.manager.user, self.manager.department))
+        columnas_insert = ", ".join(self.COLUMNAS_DB[1:])  # Omitimos "id" ya que es autoincremental
+        placeholders = ", ".join(["?"] * len(self.COLUMNAS_DB[1:]))  # Genera "?, ?, ?, ..." según la cantidad de columnas
+
+        self.cursor.execute(f"""
+            INSERT INTO registros ({columnas_insert})
+            VALUES ({placeholders})
+        """, (time, empresa, concepto, datetime.now(), None, "working", self.manager.user, self.manager.department))
+
+
         self.conexion.commit()
         row_id = self.cursor.lastrowid  # Obtener el id generado por SQLite
 

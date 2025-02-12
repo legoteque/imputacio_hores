@@ -20,6 +20,30 @@ COLORES = {
     "gris_oscuro": "#7d7d7d"  
 }
 
+DB_PATH = r"data/treeview_data.db"
+
+COLUMNAS_TREE = (
+        "checkbox",
+        "tiempo",
+        "empresa",
+        "concepto",
+        "fecha_creacion",
+        "time",
+        "date",
+    )
+
+COLUMNAS_DB = (
+        "id",
+        "tiempo",
+        "empresa",
+        "concepto",
+        "fecha_creacion",
+        "fecha_imputacion",
+        "state",
+        "user",
+        "departamento",
+    )
+
 
 def configure_styles():
     """Configura los estilos para ttk widgets."""
@@ -101,6 +125,8 @@ def formatear_fecha(fecha):
     """
     Formatea una fecha del formato 'YYYY-MM-DD HH:MM:SS' a '1 de enero' o similar.
     """
+
+    fecha = fecha.split(".")[0]  # Elimina los microsegundos
     fecha_dt = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S")
     meses = [
         "enero", "febrero", "marzo", "abril", "mayo", "junio",
