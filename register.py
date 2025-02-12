@@ -135,11 +135,9 @@ class TasksAdmin:
 
         entries = {}
         labels = [
-            "Tiempo (segundos):", "Empresa:", "Concepto:", "Fecha Creación:", 
-            "Fecha Imputación:", "Estado:", "Usuario:", "Departamento:"
+            "Tiempo (segundos):", "Empresa:", "Concepto:", "Fecha Creación:", "Usuario:", "Departamento:"
         ]
-        campos = ["tiempo", "empresa", "concepto", "fecha_creacion", 
-                "fecha_imputacion", "state", "user", "departamento"]
+        campos = ["tiempo", "empresa", "concepto", "fecha_creacion", "user", "departamento"]
 
         # Crear los widgets con grid()
         for i, label_text in enumerate(labels):
@@ -149,6 +147,11 @@ class TasksAdmin:
             # Convertir valores a cadenas y manejar None
             value = str(registro_dic.get(campos[i], "") or "")
             entry.insert(0, value)
+
+            # Deshabilitar campos no editables
+            if campos[i] in ["empresa", "user", "departamento"]:
+                entry.config(state="disabled")
+
             entry.grid(row=i, column=1, padx=5, pady=2)
             entries[campos[i]] = entry
 
@@ -159,7 +162,8 @@ class TasksAdmin:
 
         def guardar_cambios():
             """ Guarda los cambios en la base de datos y en el Treeview """
-            nuevos_valores = {campo: entry.get() for campo, entry in entries.items()}
+            # Filtrar solo los campos editables
+            nuevos_valores = {campo: entry.get() for campo, entry in entries.items() if campo in ["tiempo", "concepto", "fecha_creacion"]}
 
             # Usar la función actualizar_registro de DatabaseManager
             self.db_manager.actualizar_registro(registro_id, nuevos_valores=nuevos_valores)
@@ -167,9 +171,12 @@ class TasksAdmin:
             # Actualizar en el Treeview solo los valores visibles
             tiempo_formateado = seconds_to_string(int(nuevos_valores["tiempo"]), include_seconds=False)
             fecha_formateada = formatear_fecha(nuevos_valores["fecha_creacion"])
-            self.treeview_manager.actualizar_fila(registro_id, tiempo_formateado, nuevos_valores["empresa"], 
-                                                nuevos_valores["concepto"], fecha_formateada, nuevos_valores["tiempo"],
-                                                nuevos_valores["fecha_creacion"])
+            self.treeview_manager.actualizar_fila(registro_id, tiempo_formateado, registro_dic["empresa"], 
+                                                nuevos_valores["concepto"], fecha_formateada, 
+                                                nuevos_valores["tiempo"], nuevos_valores["fecha_creacion"])
+            
+            #configurar estado detenido
+            self.app.set_detener_state()
 
             # Cerrar popup y restaurar la ventana principal
             cerrar_popup()
@@ -188,75 +195,44 @@ class TasksAdmin:
 
 
 
+
     def imputar(self, desde_menu=False):
         """
-    Imputa registros desde SQLite y los sube a SQL Server.
-    - Si `desde_menu` es True, imputa solo un registro seleccionado.
-    - Si `desde_menu` es False, imputa todos los registros con checkbox marcado.
-    """
-    fecha_actual = return_fecha_actual()
-    print("🔹 Iniciando proceso de imputación...")
+        Imputa registros desde SQLite y los sube a SQL Server.
+        - Si `desde_menu` es True, imputa solo un registro seleccionado.
+        - Si `desde_menu` es False, imputa todos los registros con checkbox marcado.
+        """
+        fecha_actual = return_fecha_actual()
+        print("🔹 Iniciando proceso de imputación...")
 
-    # Conexión a SQLite
-    conexion_sqlite = sqlite3.connect("base_local.db")  # Reemplaza con tu BD real
-    cursor_sqlite = conexion_sqlite.cursor()
+        # Obtener los registros a imputar
+        items_a_imputar = []
 
-    # Obtener los registros a imputar
-    items_a_imputar = []
+        if desde_menu:
+            if self.treeview_manager.seleccionado:
+                items_a_imputar.append(self.treeview_manager.seleccionado)
+        else:
+            items_a_imputar = [item for item in self.treeview_manager.tree.get_children() if 
+                               self.treeview_manager.tree.item(item, "values")[0] == "✔"]
 
-    if desde_menu:
-        if self.treeview_manager.seleccionado:
-            items_a_imputar.append(self.treeview_manager.seleccionado)
-    else:
-        items_a_imputar = [item for item in self.tree.get_children() if self.tree.item(item, "values")[0] == "✔"]
+        if not items_a_imputar:
+            print("⚠️ No hay registros seleccionados para imputar.")
+            return
 
-    if not items_a_imputar:
-        print("⚠️ No hay registros seleccionados para imputar.")
-        return
+        print(f"📂 Registros a imputar: {items_a_imputar}")
 
-    print(f"📂 Registros a imputar: {items_a_imputar}")
+        # Paso 1: Actualizar estado en SQLite a "imputando"
+        for item_id in items_a_imputar:
+            self.db_manager.actualizar_registro(
+                item_id,
+                nuevos_valores={"fecha_imputacion": fecha_actual, "state": "imputando"}
+            )
 
-    # Paso 1: Actualizar SQLite antes de enviar a SQL Server
-    cursor_sqlite.executemany("""
-        UPDATE registros
-        SET fecha_imputacion = ?, state = 'imputado'
-        WHERE id = ?
-    """, [(fecha_actual, item) for item in items_a_imputar])
-    conexion_sqlite.commit()
+        # Eliminar registros de la interfaz gráfica
+        for item in items_a_imputar:
+            self.treeview_manager.borrar_fila(item)
 
-    # Obtener los datos de los registros imputados para SQL Server
-    placeholders = ",".join(["?" for _ in items_a_imputar])  # Genera '?, ?, ?' según la cantidad de registros
-    cursor_sqlite.execute(f"""
-        SELECT tiempo, empresa, concepto, fecha_creacion, fecha_imputacion, state, user, departamento, ''
-        FROM registros
-        WHERE id IN ({placeholders})
-    """, items_a_imputar)
-    datos_a_subir = cursor_sqlite.fetchall()
-
-    if not datos_a_subir:
-        print("⚠️ No se encontraron datos para subir a SQL Server.")
-        return
-
-    # Paso 2: Subir datos a SQL Server
-    if insertar_registros(datos_a_subir):
-        # Paso 3: Confirmar en SQLite que los registros fueron imputados correctamente
-        cursor_sqlite.executemany("""
-            UPDATE registros
-            SET state = 'imputado'
-            WHERE id = ?
-        """, [(item,) for item in items_a_imputar])
-        conexion_sqlite.commit()
-
-        print(f"✅ Registros {items_a_imputar} imputados correctamente en SQL Server y actualizados en SQLite.")
-
-    # Cerrar conexiones
-    conexion_sqlite.close()
-
-    # Eliminar registros de la interfaz gráfica
-    for item in items_a_imputar:
-        self.tree.delete(item)
-
-    print("🚀 Imputación completada.")
+        print("🚀 Imputación completada.")
 
 
 

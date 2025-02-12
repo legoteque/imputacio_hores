@@ -38,3 +38,30 @@ def insertar_registros(datos):
         return False
     finally:
         conn.close()
+
+
+
+# Obtener los datos de los registros imputados para SQL Server
+datos_a_subir = []
+for item_id in items_a_imputar:
+    registro = self.db_manager.obtener_registro(item_id)
+    if registro:
+        datos_a_subir.append((
+            registro["tiempo"], registro["empresa"], registro["concepto"],
+            registro["fecha_creacion"], registro["fecha_imputacion"], 
+            registro["state"], registro["user"], registro["departamento"], ''
+        ))
+
+if not datos_a_subir:
+    print("⚠️ No se encontraron datos para subir a SQL Server.")
+    return
+
+# Paso 2: Subir datos a SQL Server
+if insertar_registros(datos_a_subir):
+    # Paso 3: Confirmar en SQLite que los registros fueron imputados correctamente
+    for item_id in items_a_imputar:
+        db_manager.actualizar_registro(item_id, nuevos_valores={"state": "imputado"})
+
+    print(f"✅ Registros {items_a_imputar} imputados correctamente en SQL Server y actualizados en SQLite.")
+else:
+    print(f"❌ Error en la conexión a SQL Server. Los registros quedan en estado 'imputando'.")

@@ -5,6 +5,10 @@ from functions import COLUMNAS_DB
 
 class DatabaseManager:
     def __init__(self, db_path):
+        # Definir columnas como variable de instancia
+        self.COLUMNAS = ["tiempo", "empresa", "concepto", "fecha_creacion",
+                         "fecha_imputacion", "state", "user", "departamento"]
+        
         # Conectar a SQLite
         self.conexion = sqlite3.connect(db_path)
         self.cursor = self.conexion.cursor()
@@ -85,8 +89,10 @@ class DatabaseManager:
                 WHERE id = ?
             """, (tiempo, registro_id))
         elif nuevos_valores:
-            columnas = ["tiempo", "empresa", "concepto", "fecha_creacion", 
-                        "fecha_imputacion", "state", "user", "departamento"]
+            # columnas = ["tiempo", "empresa", "concepto", "fecha_creacion", 
+            #             "fecha_imputacion", "state", "user", "departamento"]
+            
+            columnas = [col for col in nuevos_valores.keys() if col in self.COLUMNAS]
             
             set_clause = ", ".join(f"{col} = ?" for col in columnas)
             valores = [nuevos_valores[col] for col in columnas] + [registro_id]
