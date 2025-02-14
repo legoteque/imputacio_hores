@@ -296,6 +296,8 @@ class TreeviewManager:
 
         if not self.menu_habilitado:
             return  # No hacer nada si el menú está deshabilitado
+        
+        self.set_all_checkboxes(nuevo_estado=" ")
 
         # Identificar la fila bajo el cursor
         item = self.tree.identify_row(event.y)
@@ -307,7 +309,7 @@ class TreeviewManager:
             # Asegurarse de que hay valores antes de configurar el menú
             if valores:
                 # Actualizar la etiqueta del menú contextual para mostrar solo el nombre de la empresa
-                self.menu_contextual.entryconfigure(0, label=valores[1])
+                self.menu_contextual.entryconfigure(0, label=valores[2])
                 self.menu_contextual.post(event.x_root, event.y_root)
             else:
                 print(f"No hay valores en la fila {item}.")

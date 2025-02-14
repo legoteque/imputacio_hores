@@ -2,12 +2,8 @@ import os, json, csv
 import pandas as pd
 from collections import OrderedDict
 from tkinter import simpledialog, messagebox
+from functions import CONFIG_FILE, DEFAULT_CONFIG, EMPRESAS_CSV, NUEVAS_EMPRESAS_CSV, EMPLEADOS_CSV
 
-CONFIG_FILE = "data/config.json"
-DEFAULT_CONFIG = {"session": {"user": "", "pass": ""}}
-EMPRESAS_CSV = "data/res_partner.csv"
-NUEVAS_EMPRESAS_CSV = "data/new_partners.csv"
-EMPLEADOS_CSV = "data/hr_employee.csv"
 
 import os
 import json
@@ -152,8 +148,8 @@ class SessionManager:
             messagebox.showerror("Error", f"No se pudo guardar la empresa: {e}")
 
 
-        empresas_dic = self.load_empresas_combo_values()
-        self.app.configurar_empresa_combobox(mostrar=True, valores=list(empresas_dic.keys()), seleccion=nueva_empresa)
+        self.empresas_dic = self.load_empresas_combo_values()
+        self.app.configurar_empresa_combobox(mostrar=True, valores=list(self.empresas_dic.keys()), seleccion=nueva_empresa)
 
 
     def load_config(self):

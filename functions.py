@@ -1,6 +1,16 @@
 from datetime import datetime
 from tkinter import ttk
 
+DB_PATH = r"data/treeview_data.db"
+ICON = "assets/icono.ico"
+
+CONFIG_FILE = "data/config.json"
+DEFAULT_CONFIG = {"session": {"user": "", "pass": ""}}
+EMPRESAS_CSV = "data/res_partner.csv"
+NUEVAS_EMPRESAS_CSV = "data/new_partners.csv"
+EMPLEADOS_CSV = "data/hr_employee.csv"
+
+
 COLORES = {
     "blanco": "#ffffff",
     "negro": "#000000",
@@ -20,7 +30,6 @@ COLORES = {
     "gris_oscuro": "#7d7d7d"  
 }
 
-DB_PATH = r"data/treeview_data.db"
 
 COLUMNAS_TREE = (
         "checkbox",

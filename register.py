@@ -108,6 +108,15 @@ class TasksAdmin:
             for item in items_a_borrar:
                 self.db_manager.borrar_registro(item)
                 self.treeview_manager.borrar_fila(item)
+            #ocultamos el frame inferior
+            self.treeview_manager.bottom_frame.pack_forget()
+
+        #configuramos estado a detenido por si hemos borrado el selecionado
+        self.app.set_detener_state()
+        #reiniciamos valores
+        self.app.elapsed_time = 0
+        self.app.id_register = None
+        self.app.selected_empresa = None
 
 
     def editar(self):
@@ -231,6 +240,15 @@ class TasksAdmin:
         # Eliminar registros de la interfaz gráfica
         for item in items_a_imputar:
             self.treeview_manager.borrar_fila(item)
+
+        #ocultamos el frame inferior
+        self.treeview_manager.bottom_frame.pack_forget()
+        #configuramos estado a detenido por si hemos imputado el seleccionado
+        self.app.set_detener_state()
+        #reiniciamos valores
+        self.app.elapsed_time = 0
+        self.app.id_register = None
+        self.app.selected_empresa = None
 
         print("🚀 Imputación completada.")
 

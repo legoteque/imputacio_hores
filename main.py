@@ -3,22 +3,10 @@ import tkinter as tk
 from tkinter import ttk
 from session_manager import SessionManager
 from systray_manager import SystrayManager
-from functions import procesar_nombre, seconds_to_string
-from tasks_admin import TasksAdmin
+from functions import procesar_nombre, seconds_to_string, configure_styles
+from functions import COLORES, ICON
+from register import TasksAdmin
 
-ICON = "assets/icono.ico"
-COLORES = {
-    "blanco": "#ffffff",
-    "negro": "#000000",
-    "naranja": "#f39c12",
-    "rojo": "#c0392b",
-    "verde": "#2ecc71",
-    "azul": "#3498db",
-    "azul_claro": "#0000FF",
-    "rojo_oscuro": "#e74c3c",
-    "gris_claro": "#d3d3d3",
-    "verde_claro": "#90EE90"
-}
 
 
 class ImputacionesApp:
@@ -32,16 +20,16 @@ class ImputacionesApp:
 
         # Inicialización de widgets y managers
         self.configure_root()
-        self.configure_styles()
+        configure_styles()
 
-        self.session = SessionManager()
+        self.session = SessionManager(self)
         self.systray = SystrayManager(self, ICON, "SIN USUARIO")
 
         # Secciones de la aplicación
         self.create_user_section()
         self.create_search_section()
         self.create_toggle_section()
-        self.tasks_admin = TasksAdmin(self.root, self, self.session)
+        self.tasks_admin = TasksAdmin(self)
         
         self.systray.initialized.wait()  # Esperar a que el systray esté listo
         
@@ -52,6 +40,13 @@ class ImputacionesApp:
             
 
 #--------------------------------------------------------------------------------------------------------LOGICAL
+
+    def handle_logout_button(self):
+        if self.session.logged_in:
+            #deslogamos
+            self.session.unselected_user()
+            self.selected_empresa = None
+            self.set_logout_state()
     
     def logged_in(self):
         self.set_login_state()
@@ -59,20 +54,18 @@ class ImputacionesApp:
         #cargamos el sqlite al treeview con los regostros del usuario
         self.tasks_admin.cargar_datos_desde_sqlite()
         
-    def logged_out(self):
-        self.session.unselected_user()
-        self.selected_empresa = None
-
-        self.set_logout_state()
 
     # Función para actualizar las etiquetas de empresa y CIF seleccionados
     def selected_partner(self, event):
         """Lógica cuando el usuario selecciona una empresa."""
         empresa = self.empresa_combobox.get()
         
-        if empresa != self.session.empresa_no_creada:     
+        if empresa != self.session.empresa_no_creada:
             self.selected_empresa = self.empresa_combobox.get()        
             self.set_empresa_seleccionada_state()
+        else:
+            self.session.añadir_empresa()
+            
 
     
     def restored_task(self, id_registro, time, empresa, concepto):
@@ -125,13 +118,9 @@ class ImputacionesApp:
             # Convertimos id_register a str para asegurar coincidencia con el Treeview
             id_registro = str(self.id_register)
     
-            # # Verificamos si el id existe en el Treeview antes de acceder a sus valores
-            if id_registro in self.tasks_admin.tree.get_children():         
-                if self.elapsed_time % 30 == 0:  # Actualizar solo cada 30 segundos
-                    self.tasks_admin.time_update(id_registro, self.elapsed_time)
-                    print(f"Actualizado temporizador para ID {id_registro}: {self.elapsed_time}")
-            else:
-                print(f"ID {id_registro} no encontrado en el Treeview.")
+            if self.elapsed_time % 30 == 0:  # Actualizar solo cada 30 segundos
+                self.tasks_admin.time_update(id_registro, self.elapsed_time)
+                print(f"Actualizado temporizador para ID {id_registro}: {self.elapsed_time}")
     
             # Guardamos el identificador del after para poder cancelarlo si es necesario
             self.timer_id = self.root.after(1000, self.update_timer)
@@ -201,7 +190,7 @@ class ImputacionesApp:
         
         # Dimensiones de la ventana
         window_width = 800
-        window_height = 400
+        window_height = 600
 
         # Obtén las dimensiones de la pantalla
         screen_width = self.root.winfo_screenwidth()
@@ -216,7 +205,7 @@ class ImputacionesApp:
 
         # Permitir redimensionamiento, pero sin botón de maximizar
         self.root.resizable(True, True)  # Permitir redimensionar manualmente
-        self.root.attributes("-toolwindow", True)  # Oculta el botón de maximizar en Windows
+        #self.root.attributes("-toolwindow", True)  # Oculta el botón de maximizar en Windows
 
     
         # Definir un App User Model ID único
@@ -224,19 +213,8 @@ class ImputacionesApp:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         self.root.iconbitmap(ICON)
     
-        self.minimize_to_systray()  # Ocultar la ventana al inicio
+        #self.minimize_to_systray()  # Ocultar la ventana al inicio
         self.root.protocol("WM_DELETE_WINDOW", self.minimize_to_systray)
-     
-    def configure_styles(self):
-        """Configura los estilos para ttk widgets."""
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("TLabel", font=("Segoe UI", 11, "bold"), background=COLORES["negro"], foreground=COLORES["blanco"])
-        style.configure("TEntry", font=("Segoe UI", 11), padding=5)
-        style.configure("TCombobox", font=("Segoe UI", 11), padding=5)
-        style.configure("TButton", font=("Segoe UI", 11, "bold"), padding=5, relief="flat", 
-                        background=COLORES["rojo_oscuro"], foreground=COLORES["blanco"])
-        style.map("TButton", background=[("active", COLORES["rojo"])] )
         
     def minimize_to_systray(self):
         """Oculta la ventana principal en la bandeja del sistema."""
@@ -264,19 +242,37 @@ class ImputacionesApp:
         """Crea la sección de usuario."""
         user_frame = tk.Frame(self.root, bg=COLORES["rojo_oscuro"], bd=2, relief="ridge")
         user_frame.pack(padx=5, pady=(5,2), fill="x")
-        self.user_label = tk.Label(user_frame, text="Usuario: No logado", font=("Segoe UI", 11, "bold"), 
-                                   bg=COLORES["rojo_oscuro"], fg=COLORES["blanco"])
+        self.user_label = ttk.Label(user_frame, text="Usuario: No logado")
         self.user_label.pack(side="left", padx=10)
-
-        def handle_login_button():
-            if self.session.logged_in: self.logged_out()
-            else: self.create_login_popup()
         
-        self.login_button = tk.Button(user_frame, text="Login", font=("Segoe UI", 11, "bold"), 
-                                      bg=COLORES["verde"], fg=COLORES["blanco"], command=handle_login_button)
-        self.login_button.pack(side="right", padx=20, pady=5)
+        self.logout_button = ttk.Button(user_frame, text="Logout", style="Red.TButton", command=self.handle_logout_button)
+        self.logout_button.pack(side="right", padx=20, pady=5)
 
 
+    # Función para filtrar las empresas en el Combobox
+    def filter_combobox(self, event):
+        """Filtra las empresas en el Combobox basándose en el texto ingresado en el campo de búsqueda."""
+        search_text = self.buscador_entry.get().lower().strip()
+    
+        # Si el campo está vacío, muestra la opción por defecto
+        if not search_text:
+            self.configurar_empresa_combobox(valores=list(self.session.empresas_dic.keys()), seleccion="Selecciona una empresa")
+            return
+    
+        words = search_text.split()
+        
+        filtered = [name for name, cif in self.session.empresas_dic.items()
+                    if all(word in name.lower() or word in cif.lower() for word in words)]
+
+        # Eliminar la opción "empresa no creada en SUASOR" si ya existe en la lista
+        if self.session.empresa_no_creada in filtered:
+            filtered.remove(self.session.empresa_no_creada)
+
+        # Asegurar que siempre aparezca la opción de "empresa no creada en SUASOR"
+        filtered.append(self.session.empresa_no_creada)
+    
+        self.configurar_empresa_combobox(valores=filtered, seleccion=filtered[0] if filtered else self.session.empresa_no_creada)
+        
     def create_search_section(self):
         """Crea la sección de búsqueda de empresa."""
         self.search_frame = tk.Frame(self.root, bg=COLORES["rojo_oscuro"], bd=2, relief="ridge")
@@ -284,42 +280,30 @@ class ImputacionesApp:
         # Campo para buscar empresas
         tk.Label(self.search_frame, text="Filtro:", font=("Segoe UI", 11, "bold"), bg=COLORES["rojo_oscuro"], 
                  fg=COLORES["blanco"]).pack(side="left", padx=5)
+        self.buscador_entry = ttk.Entry(self.search_frame, width=20, style="TEntry")
+        self.buscador_entry.pack(side="left", padx=5, pady=5)
         
-        self.buscador_entry = ttk.Entry(self.search_frame, width=20)
-            
         # Combobox para seleccionar empresas
-        self.empresa_combobox = ttk.Combobox(self.search_frame, values=list(self.session.empresas_dic.keys()), state="readonly")
+        self.empresa_combobox = ttk.Combobox(self.search_frame, values=list(self.session.empresas_dic.keys()), 
+                                             style="TCombobox", state="readonly")
 
-        # Función para filtrar las empresas en el Combobox
-        def filter_combobox(event):
-            """Filtra las empresas en el Combobox basándose en el texto ingresado en el campo de búsqueda."""
-            search_text = self.buscador_entry.get().lower().strip()
-        
-            # Si el campo está vacío, muestra la opción por defecto
-            if not search_text:
-                self.configurar_empresa_combobox(valores=list(self.session.empresas_dic.keys()), seleccion="Selecciona una empresa")
-                return
-        
-            words = search_text.split()
-            
-            filtered = [
-                name for name, cif in self.session.empresas_dic.items()
-                if all(word in name.lower() or word in cif.lower() for word in words)
-            ]
-
-            # Eliminar la opción si ya existe en la lista
-            no_empresa = '-----❌empresa no creada en SUASOR❌-----'
-            if no_empresa in filtered:
-                filtered.remove(no_empresa)
-
-            # Asegurar que siempre aparezca la opción de "empresa no creada en SUASOR"
-            filtered.append(no_empresa)
-        
-            self.configurar_empresa_combobox(valores=filtered, seleccion=filtered[0] if filtered else no_empresa)
 
         # Asociar eventos
-        self.buscador_entry.bind("<KeyRelease>", filter_combobox)
+        self.buscador_entry.bind("<KeyRelease>", self.filter_combobox)
         self.empresa_combobox.bind("<<ComboboxSelected>>", self.selected_partner)
+
+    def habilitar_buscador(self, enable=True):
+        """
+        Habilita o deshabilita los eventos del Combobox.
+        Parámetros:
+            enable (bool): Si es True, habilita los eventos; si es False, los deshabilita.
+        """
+        if enable:
+            #self.buscador_entry.bind("<KeyRelease>", self.filter_combobox)
+            self.empresa_combobox.bind("<<ComboboxSelected>>", self.selected_partner)
+        else:
+            #self.buscador_entry.unbind("<KeyRelease>")
+            self.empresa_combobox.unbind("<<ComboboxSelected>>")
 
     
     def create_toggle_section(self):
@@ -403,20 +387,10 @@ class ImputacionesApp:
 
 #-------------------------------------------------------------------------------------------------------GUI WIDGETS
 
-    def configurar_buscador_entry(self, mostrar=True, texto=None):
-        """Muestra/oculta el buscador y configura su texto si se proporciona."""
-        if mostrar:
-            self.buscador_entry.pack(side="left", padx=5)
-            if texto is not None:
-                self.buscador_entry.delete(0, tk.END)
-                self.buscador_entry.insert(0, texto)
-        else:
-            self.buscador_entry.pack_forget()
-
     def configurar_empresa_combobox(self, mostrar=True, valores=None, seleccion=None):
         """Muestra/oculta el combobox y configura sus valores y selección si se proporcionan."""
         if mostrar:
-            self.empresa_combobox.pack(fill="x", padx=10, pady=5)
+            self.empresa_combobox.pack(fill="x", padx=5, pady=5)
             if valores is not None:
                 self.empresa_combobox["values"] = valores
             if seleccion is not None:
@@ -490,11 +464,13 @@ class ImputacionesApp:
     def set_logout_state(self):
         """Estado: Usuario no logueado."""
         self.user_label.config(text="Usuario: No logado")
-        self.login_button.config(text="Login", bg=COLORES["verde"])
+        self.logout_button.pack_forget()
         
         self.search_frame.pack_forget()
         self.toggle_frame.pack_forget()
         self.tasks_admin.pack_forget()
+
+        self.create_login_popup()
         
         self.systray.update_tooltip("SIN USUARIO")
         self.systray.update_menu_items({
@@ -504,20 +480,20 @@ class ImputacionesApp:
             "info_state": {"text": "", "visible": False},
             "pause": {"visible": False},
             "start_stop": {"visible": False}
-        })
+        }) 
 
     def set_login_state(self):
         """Estado: Usuario logueado, configuración inicial."""
         self.user_label.config(text=f"Usuario: {self.session.user} (Departamento {self.session.department.lower()})")
-        self.login_button.config(text="Logout", bg=COLORES["rojo_oscuro"])
+        self.logout_button.pack(side="right", padx=20, pady=5)
     
         # Posicionar frames
         self.search_frame.pack(padx=5, pady=2, fill="x")
-        self.toggle_frame.pack(padx=5, pady=5, fill="both", expand=True)
+        self.toggle_frame.pack(padx=5, pady=2, fill="x")
         self.tasks_admin.pack()  
         
         # Widgets dentro de search_frame
-        self.configurar_buscador_entry(mostrar=True, texto="")
+        # self.configurar_buscador_entry(mostrar=True, texto="")
         self.configurar_empresa_combobox(mostrar=True, valores=list(self.session.empresas_dic.keys()), seleccion="Selecciona una empresa")
         
         # Widgets dentro de toggle_frame
@@ -546,13 +522,13 @@ class ImputacionesApp:
         selected_cif = self.session.empresas_dic.get(self.selected_empresa, "No disponible")
         self.configurar_selected_cif_label(mostrar=True, texto=selected_cif)
 
-        self.tasks_admin.color_fila(color="white")
+        self.tasks_admin.treeview_manager.color_fila(color="white")
         
         if new_time is None: #No es una tarea restaurada
             self.configurar_timer_label(mostrar=True, texto="00:00:00", color=COLORES["gris_claro"])
         else:    
             self.configurar_timer_label(mostrar=True, texto=seconds_to_string(new_time), color=COLORES["gris_claro"])
-            self.tasks_admin.color_fila(color="yellow", id_fila=self.id_register)
+            self.tasks_admin.treeview_manager.color_fila(color="yellow", id_fila=self.id_register)
             
         self.configurar_pause_button(mostrar=False)  # Oculta el botón de pausa
         self.configurar_play_stop_button(mostrar=True, texto="⏵", bg_color=COLORES["verde"],fg_color=COLORES["blanco"])
@@ -567,13 +543,16 @@ class ImputacionesApp:
 
     def set_play_state(self):
         """Estado: Play (imputando tiempo)."""
+        self.habilitar_buscador(False)
+        
         self.configurar_timer_label(mostrar=True, color=COLORES["blanco"])
         self.configurar_play_stop_button(mostrar=True, texto="■", bg_color=COLORES["rojo"],fg_color=COLORES["blanco"])
         self.configurar_pause_button(mostrar=True, texto="||", bg_color=COLORES["gris_claro"], fg_color=COLORES["blanco"])
         
-        self.tasks_admin.color_fila(color="green", id_fila=self.id_register)
-        self.tasks_admin.habilitar_menu_contextual(False)
-        self.tasks_admin.habilitar_clic_izquierdo(False)
+        self.tasks_admin.treeview_manager.color_fila(color="green", id_fila=self.id_register)
+        self.tasks_admin.treeview_manager.habilitar_menu_contextual(False)
+        self.tasks_admin.treeview_manager.habilitar_clic_izquierdo(False)
+        self.tasks_admin.treeview_manager.set_all_checkboxes(" ") #dehabilitamos checkboxes
         
         self.systray.update_menu_items({
             "info_state": {"text": "🟢 Estado: Imputando", "visible": True},
@@ -594,6 +573,8 @@ class ImputacionesApp:
 
     def set_detener_state(self):
         """Estado: Detenido (entre tareas)."""
+        self.habilitar_buscador(True)
+
         self.configurar_timer_label(mostrar=False)
         self.configurar_pause_button(mostrar=False)
         self.configurar_play_stop_button(mostrar=False)
@@ -601,9 +582,9 @@ class ImputacionesApp:
         self.configurar_selected_empresa_label(mostrar=True, texto="No seleccionada")
         self.configurar_selected_cif_label(mostrar=True, texto="-")
         
-        self.tasks_admin.color_fila(color="white")
-        self.tasks_admin.habilitar_menu_contextual()
-        self.tasks_admin.habilitar_clic_izquierdo()
+        self.tasks_admin.treeview_manager.color_fila(color="white")
+        self.tasks_admin.treeview_manager.habilitar_menu_contextual()
+        self.tasks_admin.treeview_manager.habilitar_clic_izquierdo()
 
         self.systray.update_tooltip(self.session.user)
         self.systray.update_menu_items({
