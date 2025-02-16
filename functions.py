@@ -22,12 +22,13 @@ COLORES = {
     "verde_claro": "#90EE90",
     "verde": "#2ecc71",
     "verde2": "#28a745",
+    "verde_oscuro": "#008F4C",
     "verde_hover": "#218838",
     "azul": "#3498db",
     "azul_claro": "#e3f2fd",
     "azul_oscuro": "#0056b3",
     "gris_claro": "#d3d3d3",
-    "gris_oscuro": "#7d7d7d"  
+    "gris_oscuro": "#A0A0A0"  
 }
 
 
@@ -62,7 +63,16 @@ def configure_styles():
     style.theme_use("clam")
 
     # Estilo de Labels
-    style.configure("TLabel", font=("Segoe UI", 11, "bold"), background=COLORES["rojo_oscuro"], foreground=COLORES["blanco"])
+    style.configure("TLabel", font=("Segoe UI", 10, "bold"), background=COLORES["rojo_oscuro"], foreground=COLORES["azul_claro"])
+    style.configure("Timer.TLabel", font=("Segoe UI", 14, "bold"), background=COLORES["rojo_oscuro"], foreground=COLORES["blanco"])
+    style.configure("PTimer.TLabel", font=("Segoe UI", 14, "bold"), background=COLORES["rojo_oscuro"], foreground=COLORES["gris_claro"])
+
+
+    # Estilos de LabelFrame (para observaciones)
+    style.configure("TLabelFrame", font=("Segoe UI", 11, "bold"), background="white", foreground="black", relief="solid", padding=5)
+
+    # Estilos de LabelFrame dentro (label interior)
+    style.configure("TLabelFrame.Label", font=("Segoe UI", 11, "bold"), foreground="black")
 
     # Estilo de Entries
     style.configure("TEntry", font=("Segoe UI", 11), padding=8, relief="flat", fieldbackground=COLORES["blanco"])
@@ -76,17 +86,31 @@ def configure_styles():
     style.map("Flat.TButton", background=[("active", COLORES["azul_oscuro"])])  # Azul más oscuro al pasar el ratón
 
     #Button
+    # style.configure("TButton", font=("Segoe UI", 11, "bold"), padding=5, relief="flat", 
+    #                 background=COLORES["rojo_oscuro"], foreground=COLORES["blanco"])
+    # style.map("TButton", background=[("active", COLORES["rojo"])] )
+
+    #Logout button
+    style.configure("Logout.TButton", font=("Segoe UI", 8, "bold"), padding=5, foreground=COLORES["blanco"], background=COLORES["rojo"])
+    style.map("Logout.TButton", background=[("active", COLORES["rojo_oscuro"])])
+
     # Estilo verde
-    style.configure("Green.TButton", font=("Segoe UI", 11, "bold"), padding=5, foreground=COLORES["blanco"], background=COLORES["verde"])
+    style.configure("Green.TButton", font=("Segoe UI", 14, "bold"), padding=5, foreground=COLORES["blanco"], background=COLORES["verde"])
     style.map("Green.TButton", background=[("active", COLORES["verde_hover"])])
 
     # Estilo rojo
-    style.configure("Red.TButton", font=("Segoe UI", 11, "bold"), padding=5, foreground=COLORES["blanco"], background=COLORES["rojo"])
-    style.map("Red.TButton", background=[("active", COLORES["rojo_hover"])])
+    style.configure("Red.TButton", font=("Segoe UI", 14, "bold"), padding=5, foreground=COLORES["blanco"], background=COLORES["rojo"])
+    style.map("Red.TButton", background=[("active", COLORES["rojo_oscuro"])])
 
-    style.configure("TButton", font=("Segoe UI", 11, "bold"), padding=5, relief="flat", 
-                    background=COLORES["rojo_oscuro"], foreground=COLORES["blanco"])
-    style.map("TButton", background=[("active", COLORES["rojo"])] )
+    # 🔹 Estilo para el botón de pausa (gris claro)
+    style.configure("Pause.TButton", font=("Segoe UI", 14, "bold"), padding=5, foreground=COLORES["blanco"], 
+                    background=COLORES["gris_claro"], borderwidth=1)
+    style.map("Pause.TButton", background=[("active", COLORES["gris_oscuro"])])  # Gris más oscuro al pasar el mouse
+
+    # 🔹 Estilo para el botón de reanudar (verde claro)
+    style.configure("Reanudar.TButton", font=("Segoe UI", 14, "bold"), padding=5, foreground=COLORES["blanco"],
+                    background=COLORES["verde_claro"], borderwidth=1)
+    style.map("Reanudar.TButton", background=[("active", COLORES["verde_oscuro"])])  # Verde más oscuro al pasar el mouse
 
 
 
@@ -132,11 +156,9 @@ def seconds_to_string(time, include_seconds=True):
 @staticmethod
 def formatear_fecha(fecha):
     """
-    Formatea una fecha del formato 'YYYY-MM-DD HH:MM:SS' a '1 de enero' o similar.
+    Formatea una fecha del formato 'YYYY-MM-DD HH:MM' a '1 de enero' o similar.
     """
-
-    fecha = fecha.split(".")[0]  # Elimina los microsegundos
-    fecha_dt = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S")
+    fecha_dt = datetime.strptime(fecha, "%Y-%m-%d %H:%M")
     meses = [
         "enero", "febrero", "marzo", "abril", "mayo", "junio",
         "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
@@ -144,4 +166,4 @@ def formatear_fecha(fecha):
     return f"{fecha_dt.day} de {meses[fecha_dt.month - 1]}"
 
 def return_fecha_actual():
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return datetime.now().strftime("%Y-%m-%d %H:%M")

@@ -8,13 +8,14 @@ class TreeviewManager:
         self.register = register
         self.frame = register.frame
 
-        self.menu_habilitado = True  # Variable para controlar si el menú está habilitado
+        self.interaccion_treeview = True # Variable para controlar si el menú contextual y la posiblidad de seleccionar un registro está habilitada
         self.seleccionado = None  # Variable para mantener el registro seleccionado
 
-        
         # Definir columnas con sus nombres adecuados (ahora "checkbox" es el primer elemento)
         self.tree = ttk.Treeview(self.frame, columns=COLUMNAS_TREE, show="headings", height=10)
         self._configurar_treeview()
+        
+        self.tree.bind("<Button-1>", self.click_izquierdo)  # Asocia el evento para capturar click izquierdo sobre el treeview
 
 
     def _configurar_treeview(self):
@@ -134,7 +135,7 @@ class TreeviewManager:
                 valor = int(valor)  # Convertir tiempos a enteros
             elif columna_orden == "date":
                 try:
-                    valor = datetime.strptime(valor, "%Y-%m-%d %H:%M:%S")  # Convertir fechas a objetos datetime
+                    valor = datetime.strptime(valor, "%Y-%m-%d %H:%M")  # Convertir fechas a objetos datetime
                 except ValueError:
                     valor = None  # Manejar valores inválidos
             items.append((valor, item))
@@ -232,11 +233,17 @@ class TreeviewManager:
                 # Restaurar el texto original sin el símbolo
                 self.tree.heading(col, text=texto_actual.split(' ')[0])
 
-
     def click_izquierdo(self, event):
         """
         Maneja el clic izquierdo en el Treeview.
+        Siempre deselecciona filas, pero el resto del proceso depende de si está habilitado o no.
         """
+        print("click izquierdo")
+        self.deseleccionar_fila()  # Siempre ejecuta esto
+
+        if not self.interaccion_treeview:
+            return  # Si está deshabilitado, no hace nada más
+
         try:
             region = self.tree.identify_region(event.x, event.y)
             column = self.tree.identify_column(event.x)
@@ -246,7 +253,6 @@ class TreeviewManager:
             print(f"Clic izquierdo: región={region}, columna={column}, fila={item}")
 
             if not item:
-                print("No se identificó una fila. Ignorando el clic.")
                 return  # Si no se identifica una fila, no hacer nada
 
             # Si el clic es en el encabezado de la columna checkbox
@@ -255,34 +261,24 @@ class TreeviewManager:
 
             # Si el clic es en una celda de la columna checkbox
             if region == "cell" and column == "#1":
-                print(f"Clic en checkbox de la fila {item}.")
                 self.toggle_single_checkbox(item)
                 return
 
             # Si el clic es en otra celda de la fila
             if region == "cell":
-                print(f"Clic en la fila {item}. Llamando a recuperar.")
                 self.register.recuperar(item)
 
         except Exception as e:
             print(f"Error al manejar el clic izquierdo: {e}")
 
 
-    def habilitar_clic_izquierdo(self, habilitar=True):
-        """
-        Habilita o deshabilita los eventos del clic izquierdo en el Treeview.
-        """
-        if habilitar:
-            self.tree.bind("<Button-1>", self.click_izquierdo) # Vuelve a asociar el evento
-        else:
-            self.tree.unbind("<Button-1>")  # Desvincula el evento del clic izquierdo
 
 
-    def habilitar_menu_contextual(self, habilitar=True):
+    def habilitar_interaccion_treeview(self, habilitar=True):
         """
-        Habilita o deshabilita el menú contextual.
+        Habilita o deshabilita el menú contextual y la posiblidad de seleccionar un registro.
         """
-        self.menu_habilitado = habilitar
+        self.interaccion_treeview = habilitar
         if habilitar:
             self.tree.bind("<Button-3>", self.mostrar_menu_contextual)
         else:
@@ -294,7 +290,7 @@ class TreeviewManager:
         Selecciona automáticamente la fila clicada.
         """
 
-        if not self.menu_habilitado:
+        if not self.interaccion_treeview:
             return  # No hacer nada si el menú está deshabilitado
         
         self.set_all_checkboxes(nuevo_estado=" ")

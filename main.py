@@ -15,8 +15,7 @@ class ImputacionesApp:
         self._running = False
         self._paused = False
         self.elapsed_time = 0
-        self.selected_empresa = None
-        self.id_register = None
+        self.register_dic = None
 
         # Inicialización de widgets y managers
         self.configure_root()
@@ -45,7 +44,7 @@ class ImputacionesApp:
         if self.session.logged_in:
             #deslogamos
             self.session.unselected_user()
-            self.selected_empresa = None
+            self.register_dic = None
             self.set_logout_state()
     
     def logged_in(self):
@@ -58,22 +57,38 @@ class ImputacionesApp:
     # Función para actualizar las etiquetas de empresa y CIF seleccionados
     def selected_partner(self, event):
         """Lógica cuando el usuario selecciona una empresa."""
+        #deseleccionamos cualquier registro del treeview
+        self.tasks_admin.treeview_manager.deseleccionar_fila()
+
         empresa = self.empresa_combobox.get()
         
         if empresa != self.session.empresa_no_creada:
-            self.selected_empresa = self.empresa_combobox.get()        
+            self.register_dic = {"empresa": self.empresa_combobox.get()}
+            self._running = False
+            self._paused = False
+            self.elapsed_time = 0        
             self.set_empresa_seleccionada_state()
         else:
             self.session.añadir_empresa()
+
+    def unselected_partner(self):
+        """Logica cuando se realiza cualquier accion que nos lleva a deseleccionar la empresa activa"""
+        #deseleccionamos cualquier registro del treeview
+        self.tasks_admin.treeview_manager.deseleccionar_fila()
+        #reiniciamos valores
+        self._running = False
+        self._paused = False
+        self.elapsed_time = 0
+        self.register_dic = None
+        self.set_detener_state()
             
 
     
-    def restored_task(self, id_registro, time, empresa, concepto):
-        self.selected_empresa = empresa
-        self.elapsed_time = int(time)
-        self.id_register = id_registro
+    def restored_task(self, register_dic):
+        self.register_dic = register_dic
+        self.elapsed_time = int(register_dic["tiempo"])
 
-        self.set_empresa_seleccionada_state(time)
+        self.set_empresa_seleccionada_state(self.elapsed_time)
 
         self._running = True
         self.paused = True
@@ -112,11 +127,11 @@ class ImputacionesApp:
         if self._running and not self._paused:  # Solo si está en marcha y no en pausa
             self.elapsed_time += 1
             timer = seconds_to_string(self.elapsed_time)
-            self.timer_label.config(text=timer)
-            self.systray.update_tooltip(procesar_nombre(self.session.user) + "-->" + self.selected_empresa + ": " + timer)
+            self.widgets["timer_label"].config(text=timer)
+            self.systray.update_tooltip(procesar_nombre(self.session.user) + "-->" + self.register_dic["empresa"] + ": " + timer)
     
-            # Convertimos id_register a str para asegurar coincidencia con el Treeview
-            id_registro = str(self.id_register)
+            # Convertimos id a str para asegurar coincidencia con el Treeview
+            id_registro = str(self.register_dic["id"])
     
             if self.elapsed_time % 30 == 0:  # Actualizar solo cada 30 segundos
                 self.tasks_admin.time_update(id_registro, self.elapsed_time)
@@ -148,15 +163,14 @@ class ImputacionesApp:
             self._paused = False
             
             #actualiza el tiempo en el treeview y db
-            self.tasks_admin.time_update(self.id_register, self.elapsed_time)
+            self.tasks_admin.time_update(self.register_dic["id"], self.elapsed_time)
 
             #reiniciamos valores
             self.elapsed_time = 0
-            self.id_register = None
-            self.selected_empresa = None
+            self.register_dic = None
             
         else:  # Inicia el temporizador
-            self.id_register = self.tasks_admin.agregar_fila(self.elapsed_time, self.selected_empresa, "")
+            self.register_dic["id"] = self.tasks_admin.agregar_fila(self.elapsed_time, self.register_dic["empresa"], "")
             self.running = True
             self.update_timer()  # Inicia el temporizador
 
@@ -164,13 +178,13 @@ class ImputacionesApp:
     def toggle_blinking(self, start=True):
         """Activa o desactiva el parpadeo del texto del temporizador."""
         if start:
-            current_text = self.timer_label.cget("text")  # Obtiene el texto actual del label
+            current_text = self.widgets["timer_label"].cget("text")  # Obtiene el texto actual del label
             next_text = "" if current_text else seconds_to_string(self.elapsed_time)  # Alterna entre vacío y el tiempo actual
-            self.timer_label.config(text=next_text)
+            self.widgets["timer_label"].config(text=next_text)
             
             # Actualiza el tooltip del systray
             tooltip_text = "Pausado ⏸️" if next_text == "" else next_text
-            self.systray.update_tooltip(procesar_nombre(self.session.user) + "-->" + self.selected_empresa + ": " + tooltip_text)
+            self.systray.update_tooltip(procesar_nombre(self.session.user) + "-->" + self.register_dic["empresa"] + ": " + tooltip_text)
             
             # Programar el próximo cambio de texto en 500 ms
             self.blinking_id = self.root.after(500, lambda: self.toggle_blinking(True))
@@ -179,7 +193,7 @@ class ImputacionesApp:
             if hasattr(self, 'blinking_id'):
                 self.root.after_cancel(self.blinking_id)
             original_text = seconds_to_string(self.elapsed_time)
-            self.timer_label.config(text=original_text)  # Restaura el texto original
+            self.widgets["timer_label"].config(text=original_text)  # Restaura el texto original
     
 #--------------------------------------------------------------------------------------------------------GUI ROOT
      
@@ -245,7 +259,7 @@ class ImputacionesApp:
         self.user_label = ttk.Label(user_frame, text="Usuario: No logado")
         self.user_label.pack(side="left", padx=10)
         
-        self.logout_button = ttk.Button(user_frame, text="Logout", style="Red.TButton", command=self.handle_logout_button)
+        self.logout_button = ttk.Button(user_frame, text="Logout", style="Logout.TButton", command=self.handle_logout_button)
         self.logout_button.pack(side="right", padx=20, pady=5)
 
 
@@ -305,37 +319,95 @@ class ImputacionesApp:
             #self.buscador_entry.unbind("<KeyRelease>")
             self.empresa_combobox.unbind("<<ComboboxSelected>>")
 
-    
+
+
     def create_toggle_section(self):
-        """Crea la sección del botón ON/OFF y contador usando grid."""
-        self.toggle_frame = tk.Frame(self.root, bg=COLORES["rojo_oscuro"], bd=2, relief="ridge")
+        """Crea la sección del botón ON/OFF y contador con todos los widgets colgando de toggle_frame."""
         
-        # Configuración de las columnas en la grilla
-        self.toggle_frame.grid_columnconfigure(0, weight=1, minsize=80)
+        self.toggle_frame = tk.Frame(self.root, bg=COLORES["rojo_oscuro"], bd=2, relief="ridge")
+
+        # Diccionario de widgets para facilitar manipulación
+        self.widgets = {}
+
+        # 🟢 Primera fila: Empresa
+        self.widgets["selected_empresa_label"] = ttk.Label(self.toggle_frame, style="TLabel")
+
+        # 🔵 Segunda fila: CIF y Concepto
+        self.widgets["cif_frame"] = tk.Frame(self.toggle_frame, bg=COLORES["rojo_oscuro"])  # Contenedor para CIF
+
+        self.widgets["cif_label"] = ttk.Label(self.widgets["cif_frame"], text="CIF:", style="TLabel")
+        self.widgets["selected_cif_label"] = ttk.Label(self.widgets["cif_frame"], style="TLabel")
+
+        # Organizar dentro del Frame (CIF y su valor)
+        self.widgets["cif_label"].grid(row=0, column=0, padx=2, sticky="w")
+        self.widgets["selected_cif_label"].grid(row=0, column=1, padx=5, sticky="w")
+
+        self.widgets["concepto_frame"] = tk.Frame(self.toggle_frame, bg=COLORES["rojo_oscuro"])  # Contenedor para concepto
+
+        self.widgets["concepto_label"] = ttk.Label(self.widgets["concepto_frame"], text="Concepto:")
+        self.widgets["selected_concepto_label"] = ttk.Label(self.widgets["concepto_frame"], wraplength=250, anchor="w", justify="left", style="TLabel")
+
+        # Organizar dentro del Frame (CIF y su valor)
+        self.widgets["concepto_label"].grid(row=0, column=0, padx=2, sticky="w")
+        self.widgets["selected_concepto_label"].grid(row=0, column=1, padx=5, sticky="w")
+
+        # 🔴 Tercera fila: Observaciones
+        self.widgets["observaciones_label"] = ttk.Label(self.toggle_frame, text="Observaciones:")
+        self.widgets["selected_observaciones_label"] = ttk.Label(self.toggle_frame, wraplength=250, anchor="w", justify="left", style="TLabel")
+        
+
+        # ⚡ Cuarta fila: Temporizador y Botones
+        self.widgets["timer_label"] = ttk.Label(self.toggle_frame, style="Timer.TLabel")
+
+        self.widgets["buttons_frame"] = tk.Frame(self.toggle_frame, bg=COLORES["rojo_oscuro"])  # Contenedor para Buttons
+
+        self.widgets["pause_button"] = ttk.Button(self.widgets["buttons_frame"], width=3, style="Pause.TButton", command=lambda: self.pause_timer())
+        self.widgets["play_stop_button"] = ttk.Button(self.widgets["buttons_frame"], width=3, style="Green.TButton", command=lambda: self.start_stop_timer())
+
+        # Organizar dentro del Frame (CIF y su valor)
+        self.widgets["pause_button"].grid(row=0, column=0, padx=1, sticky="w")
+        self.widgets["play_stop_button"].grid(row=0, column=1, padx=1, sticky="w")
+
+        # 🔹 Layout de los widgets
+        layout = [
+            # Fila 0: Empresa
+            ("selected_empresa_label", 0, 0, 4, "w"),
+
+            # Fila 1: CIF y Concepto. Usamos Frame en lugar de los Labels
+            ("cif_frame", 1, 0, 1, "w"),
+            ("concepto_frame", 1, 1, 3, "w"),
+
+            # Fila 2: Temporizador y Botones
+            ("observaciones_label", 2, 0, 1, "w"),
+            ("selected_observaciones_label", 2, 1, 3, "w"),
+
+            # Fila 3: Temporizador y Botones
+            ("timer_label", 3, 2, 1, "w"),
+            ("buttons_frame", 3, 3, 1, "w"),
+        ]
+
+        # 🔹 Configurar columnas y filas dinámicamente
+        for i in range(4):  # 4 filas
+            self.toggle_frame.grid_rowconfigure(i, weight=1, minsize=40)
+
+        self.toggle_frame.grid_columnconfigure(0, weight=0, minsize=80)
         self.toggle_frame.grid_columnconfigure(1, weight=1, minsize=100)
         self.toggle_frame.grid_columnconfigure(2, weight=0, minsize=80)
         self.toggle_frame.grid_columnconfigure(3, weight=0, minsize=80)
 
-        # Configuración de las filas dentro de toggle_frame
-        self.toggle_frame.grid_rowconfigure(0, weight=1, minsize=40)  # Primera fila
-        self.toggle_frame.grid_rowconfigure(1, weight=1, minsize=60)  # Segunda fila
-    
-        # Primera fila: Nombre de la empresa
-        self.selected_empresa_label = tk.Label(self.toggle_frame, font=("Segoe UI", 14, "bold"), bg=COLORES["rojo_oscuro"], fg=COLORES["azul_claro"])
-    
-        # Segunda fila: CIF, temporizador y botones
-        cif_label = tk.Label(self.toggle_frame, text="CIF:", font=("Segoe UI", 10, "bold"), bg=COLORES["rojo_oscuro"], fg=COLORES["azul_claro"])
-        cif_label.grid(row=1, column=0, padx=5, pady=5, sticky="w")
-        self.selected_cif_label = tk.Label(self.toggle_frame, font=("Segoe UI", 10, "bold"), bg=COLORES["rojo_oscuro"], fg=COLORES["azul_claro"])
-    
-        # Temporizador
-        self.timer_label = tk.Label(self.toggle_frame,font=("Segoe UI", 18, "bold"),bg=COLORES["rojo_oscuro"])
-    
-        # Botón para pausar/reanudar el temporizador
-        self.pause_button = tk.Button(self.toggle_frame, font=("Segoe UI", 14, "bold"), width=3, command=lambda: self.pause_timer())
-        
-        # Botón para iniciar/detener el temporizador
-        self.play_stop_button = tk.Button(self.toggle_frame, font=("Segoe UI", 14, "bold"), width=3, command=lambda: self.start_stop_timer())
+        # 🔹 Aplicar layout a cada widget
+        for widget_name, row, col, colspan, sticky in layout:
+            self.widgets[widget_name].grid(row=row, column=col, columnspan=colspan, padx=5, pady=5, sticky=sticky)
+
+    def configurar_hover_play_stop(self, activar=True):
+        """Activa o desactiva el efecto hover en play_stop_button."""
+        if activar:
+            self.widgets["play_stop_button"].bind("<Enter>", lambda e: self.widgets["play_stop_button"].config(text="⬇"))
+            self.widgets["play_stop_button"].bind("<Leave>", lambda e: self.widgets["play_stop_button"].config(text="■"))
+        else:
+            self.widgets["play_stop_button"].unbind("<Enter>")
+            self.widgets["play_stop_button"].unbind("<Leave>")
+
 
 
     def create_login_popup(self):
@@ -398,64 +470,42 @@ class ImputacionesApp:
         else:
             self.empresa_combobox.pack_forget()
 
-    def configurar_selected_empresa_label(self, mostrar=True, texto=None):
-        """Muestra/oculta el label de la empresa seleccionada y actualiza su texto si se proporciona."""
+    def configurar_label(self, widget, mostrar=True, texto=None, estilo=None):
+        """Muestra/oculta el label del widget pasado y actualiza su texto si se proporciona."""
         if mostrar:
-            self.selected_empresa_label.grid(row=0, column=0, columnspan=4, padx=5, pady=5, sticky="w")
+            self.widgets[widget].grid()
             if texto is not None:
-                self.selected_empresa_label.config(text=texto)
+                self.widgets[widget].config(text=texto)
+            if estilo is not None:
+                self.widgets[widget].config(style=estilo)
         else:
-            self.selected_empresa_label.grid_remove()
+            self.widgets[widget].grid_remove()
 
-    def configurar_selected_cif_label(self, mostrar=True, texto=None):
-        """Muestra/oculta el label del CIF de la empresa seleccionada y actualiza su texto si se proporciona."""
-        if mostrar:
-            self.selected_cif_label.grid(row=1, column=0, padx=50, pady=5, sticky="w")
-            if texto is not None:
-                self.selected_cif_label.config(text=texto)
-        else:
-            self.selected_cif_label.grid_remove()
-
-    def configurar_timer_label(self, mostrar=True, texto=None, color=None):
-        """Muestra/oculta el temporizador y configura su texto y color si se proporcionan."""
-        if mostrar:
-            self.timer_label.grid(row=1, column=1, padx=10, pady=10, sticky="nsew")
-            if texto is not None:
-                self.timer_label.config(text=texto)
-            if color is not None:
-                self.timer_label.config(fg=color)
-        else:
-            self.timer_label.grid_remove()
-
-    def configurar_pause_button(self, mostrar=True, texto=None, bg_color=None, fg_color=None, comando=None):
-        """Muestra/oculta el botón de pausa y configura su texto, colores y comando si se proporcionan."""
-        if mostrar:
-            self.pause_button.grid(row=1, column=2, padx=(5, 2), pady=5, sticky="e")
-            if texto is not None:
-                self.pause_button.config(text=texto)
-            if bg_color is not None:
-                self.pause_button.config(bg=bg_color)
-            if fg_color is not None:
-                self.pause_button.config(fg=fg_color)
-            if comando is not None:
-                self.pause_button.config(command=comando)
-        else:
-            self.pause_button.grid_remove()
-
-    def configurar_play_stop_button(self, mostrar=True, texto=None, bg_color=None, fg_color=None, comando=None):
+   
+    def configurar_button(self, button, mostrar=True, estilo=None, comando=None):
         """Muestra/oculta el botón de inicio/detención y configura su texto, colores y comando si se proporcionan."""
         if mostrar:
-            self.play_stop_button.grid(row=1, column=3, padx=(2, 5), pady=5, sticky="w")
-            if texto is not None:
-                self.play_stop_button.config(text=texto)
-            if bg_color is not None:
-                self.play_stop_button.config(bg=bg_color)
-            if fg_color is not None:
-                self.play_stop_button.config(fg=fg_color)
+            self.widgets[button].grid()
+
+            if estilo is not None:
+                self.widgets[button].config(style=estilo)
+
+                if estilo == "Green.TButton": #boton play
+                    texto = "⏵"
+                    self.configurar_hover_play_stop(activar=False)
+                elif estilo == "Red.TButton": #boton detener
+                    texto = "■"
+                    self.configurar_hover_play_stop(activar=True)
+                elif estilo == "Pause.TButton": #boton pause
+                    texto = "||"
+                elif estilo == "Reanudar.TButton": #boton reanudar
+                    texto = "⏵"
+                self.widgets[button].config(text=texto)
+                
             if comando is not None:
-                self.play_stop_button.config(command=comando)
+                self.widgets[button].config(command=comando)
         else:
-            self.play_stop_button.grid_remove()
+            self.widgets[button].grid_remove()
 
 
 #-------------------------------------------------------------------------------------------------------GUI STATES    
@@ -497,13 +547,13 @@ class ImputacionesApp:
         self.configurar_empresa_combobox(mostrar=True, valores=list(self.session.empresas_dic.keys()), seleccion="Selecciona una empresa")
         
         # Widgets dentro de toggle_frame
-        self.configurar_selected_empresa_label(mostrar=True, texto="No seleccionada")
-        self.configurar_selected_cif_label(mostrar=True, texto="-")
+        self.configurar_label(widget= "selected_empresa_label", mostrar=True, texto="No seleccionada")
+        self.configurar_label(widget= "selected_cif_label", mostrar=True, texto="-")
         
         # Reinicia contador
-        self.configurar_timer_label(mostrar=False)
-        self.configurar_pause_button(mostrar=False)  # Oculta el botón de pausa
-        self.configurar_play_stop_button(mostrar=False)
+        self.configurar_label(widget="timer_label", mostrar=False)
+        self.configurar_button(button="pause_button", mostrar=False)  # Oculta el botón de pausa
+        self.configurar_button(button="play_stop_button", mostrar=False)
         
         # Actualiza systray
         self.systray.update_tooltip(self.session.user)
@@ -518,24 +568,26 @@ class ImputacionesApp:
 
     def set_empresa_seleccionada_state(self, new_time=None):
         """Estado: Empresa seleccionada, contador detenido."""
-        self.configurar_selected_empresa_label(mostrar=True, texto=self.selected_empresa)
-        selected_cif = self.session.empresas_dic.get(self.selected_empresa, "No disponible")
-        self.configurar_selected_cif_label(mostrar=True, texto=selected_cif)
+        self.configurar_label(widget="selected_empresa_label", mostrar=True, texto=self.register_dic["empresa"])
+        selected_cif = self.session.empresas_dic.get(self.register_dic["empresa"], "No disponible")
+        self.configurar_label(widget="selected_cif_label", mostrar=True, texto=selected_cif)
 
         self.tasks_admin.treeview_manager.color_fila(color="white")
         
         if new_time is None: #No es una tarea restaurada
-            self.configurar_timer_label(mostrar=True, texto="00:00:00", color=COLORES["gris_claro"])
+            text = "00:00:00"
         else:    
-            self.configurar_timer_label(mostrar=True, texto=seconds_to_string(new_time), color=COLORES["gris_claro"])
-            self.tasks_admin.treeview_manager.color_fila(color="yellow", id_fila=self.id_register)
+            text = seconds_to_string(new_time)
+            self.tasks_admin.treeview_manager.color_fila(color="yellow", id_fila=self.register_dic["id"])
+
+        self.configurar_label(widget="timer_label", mostrar=True, texto=text, estilo="PTimer.TLabel")
             
-        self.configurar_pause_button(mostrar=False)  # Oculta el botón de pausa
-        self.configurar_play_stop_button(mostrar=True, texto="⏵", bg_color=COLORES["verde"],fg_color=COLORES["blanco"])
+        self.configurar_button(button="pause_button", mostrar=False)  # Oculta el botón de pausa
+        self.configurar_button(button="play_stop_button", mostrar=True, estilo="Green.TButton")
         
-        self.systray.update_tooltip(self.selected_empresa)
+        self.systray.update_tooltip(self.register_dic["empresa"])
         self.systray.update_menu_items({
-            "info_partner": {"text": self.selected_empresa, "visible": True},
+            "info_partner": {"text": self.register_dic["empresa"], "visible": True},
             "info_task": {"text": "", "visible": False},
             "info_state": {"text": "", "visible": False},
             "start_stop": {"text": "Iniciar", "visible": False}
@@ -545,13 +597,12 @@ class ImputacionesApp:
         """Estado: Play (imputando tiempo)."""
         self.habilitar_buscador(False)
         
-        self.configurar_timer_label(mostrar=True, color=COLORES["blanco"])
-        self.configurar_play_stop_button(mostrar=True, texto="■", bg_color=COLORES["rojo"],fg_color=COLORES["blanco"])
-        self.configurar_pause_button(mostrar=True, texto="||", bg_color=COLORES["gris_claro"], fg_color=COLORES["blanco"])
+        self.configurar_label(widget="timer_label", mostrar=True, estilo="Timer.TLabel")
+        self.configurar_button(button="play_stop_button", mostrar=True, estilo="Red.TButton")
+        self.configurar_button(button="pause_button", mostrar=True, estilo="Pause.TButton")
         
-        self.tasks_admin.treeview_manager.color_fila(color="green", id_fila=self.id_register)
-        self.tasks_admin.treeview_manager.habilitar_menu_contextual(False)
-        self.tasks_admin.treeview_manager.habilitar_clic_izquierdo(False)
+        self.tasks_admin.treeview_manager.color_fila(color="green", id_fila=self.register_dic["id"])
+        self.tasks_admin.treeview_manager.habilitar_interaccion_treeview(False)
         self.tasks_admin.treeview_manager.set_all_checkboxes(" ") #dehabilitamos checkboxes
         
         self.systray.update_menu_items({
@@ -562,9 +613,9 @@ class ImputacionesApp:
 
     def set_pause_state(self):
         """Estado: Pausa (empresa seleccionada)."""
-        self.configurar_timer_label(mostrar=True, color=COLORES["gris_claro"])
-        self.configurar_play_stop_button(mostrar=True, texto="■", bg_color=COLORES["rojo"],fg_color=COLORES["blanco"])
-        self.configurar_pause_button(mostrar=True, texto="⏵", bg_color=COLORES["verde_claro"], fg_color=COLORES["blanco"])
+        self.configurar_label(widget="timer_label", mostrar=True, estilo="PTimer.TLabel")
+        self.configurar_button(button="play_stop_button", mostrar=True, estilo="Red.TButton")
+        self.configurar_button(button="pause_button", mostrar=True, estilo="Reanudar.TButton")
         
         self.systray.update_menu_items({
             "info_state": {"text": "⏸️ Estado: Pausado", "visible": True},
@@ -575,16 +626,15 @@ class ImputacionesApp:
         """Estado: Detenido (entre tareas)."""
         self.habilitar_buscador(True)
 
-        self.configurar_timer_label(mostrar=False)
-        self.configurar_pause_button(mostrar=False)
-        self.configurar_play_stop_button(mostrar=False)
+        self.configurar_label(widget="timer_label", mostrar=False)
+        self.configurar_button(button="pause_button", mostrar=False)
+        self.configurar_button(button="play_stop_button", mostrar=False)
 
-        self.configurar_selected_empresa_label(mostrar=True, texto="No seleccionada")
-        self.configurar_selected_cif_label(mostrar=True, texto="-")
+        self.configurar_label(widget="selected_empresa_label", mostrar=True, texto="No seleccionada")
+        self.configurar_label(widget="selected_cif_label", mostrar=True, texto="-")
         
         self.tasks_admin.treeview_manager.color_fila(color="white")
-        self.tasks_admin.treeview_manager.habilitar_menu_contextual()
-        self.tasks_admin.treeview_manager.habilitar_clic_izquierdo()
+        self.tasks_admin.treeview_manager.habilitar_interaccion_treeview()
 
         self.systray.update_tooltip(self.session.user)
         self.systray.update_menu_items({
