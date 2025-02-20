@@ -1,11 +1,11 @@
 from functions import formatear_fecha, return_fecha_actual, seconds_to_string
-from functions import DB_PATH
-from sqlite import DatabaseManager
+from search_frame import BusquedaFrame
 from treeview import TreeviewManager
 import tkinter as tk
 from tkinter import ttk
 import tkinter.messagebox as messagebox
 from datetime import datetime
+        
 
 class TasksAdmin:
     def __init__(self, app):
@@ -14,12 +14,9 @@ class TasksAdmin:
 
         # Frame principal para la tabla y el scrollbar
         self.frame = ttk.Frame(app.root)
-
-        self.db_manager = DatabaseManager(DB_PATH)
         self.treeview_manager = TreeviewManager(self)
 
 
-    
     def cargar_datos_desde_sqlite(self):
         """
         Carga los registros existentes desde SQLite al Treeview filtrados por usuario.
@@ -27,7 +24,7 @@ class TasksAdmin:
         self.treeview_manager.limpiar_tree()  # Limpia el Treeview antes de cargar nuevos datos
 
         # Obtener registros desde la base de datos usando DatabaseManager
-        registros = self.db_manager.obtener_registros(self.session.user)
+        registros = self.app.db_manager.obtener_registros(self.session.user)
 
         for row in registros:
             # Datos originales
@@ -45,7 +42,6 @@ class TasksAdmin:
                                                tiempo_original=tiempo_original, fecha_original=fecha_original)
 
 
-
     def recuperar(self, item):
         """
         Recupera información de la fila seleccionada y maneja errores.
@@ -57,7 +53,7 @@ class TasksAdmin:
         try:
             # Recuperar datos del registro de la base de datos
             registro_id = str(item)
-            register_dic = self.db_manager.obtener_registro(registro_id)
+            register_dic = self.app.db_manager.obtener_registro(registro_id)
 
             print(register_dic)
 
@@ -72,102 +68,73 @@ class TasksAdmin:
             print(f"Error al recuperar información de la fila {item}: {e}")
 
     
-    def agregar_fila(self, time, empresa, concepto):
+    def nuevo_registro(self, time, register_dic):
         """
         Agrega una fila nueva al Treeview y a la base de datos.
-        Retorna el id de registro generado por sqlite
+        Retorna el id y fecha_creacion de registro generado por sqlite
         """
-        registro_id = self.db_manager.agregar_registro(time, empresa, concepto, self.session.user, self.session.department)
-        fecha_formateada = formatear_fecha(return_fecha_actual())
+        
+        registro_id = self.app.db_manager.agregar_registro(time, register_dic, self.session.user, self.session.department)
+        fecha_formateada = formatear_fecha(register_dic["fecha_creacion"])
         tiempo_formateado = seconds_to_string(time, include_seconds=False)
-        self.treeview_manager.agregar_fila(registro_id, tiempo_formateado, empresa, concepto, fecha_formateada, time, return_fecha_actual())
+        self.treeview_manager.agregar_fila(registro_id, tiempo_formateado, register_dic["empresa"], register_dic["concepto"], 
+                                           fecha_formateada, time, register_dic["fecha_creacion"])
+
         return registro_id
 
 
-
-    def time_update(self, id_registro, time):
+    def update_register(self, register_dic, time):
         """
         Actualiza el tiempo de un registro en el Treeview y en la base de datos.
         """
-        self.db_manager.actualizar_registro(id_registro, tiempo=time)
-        registro = self.db_manager.obtener_registro(id_registro)
-        if registro:
+        print(register_dic)
+        self.app.db_manager.actualizar_registro(nuevos_valores=register_dic, tiempo=time)
+
+
+        if register_dic:
             tiempo_formateado = seconds_to_string(time, include_seconds=False)
-            fecha_formateada = formatear_fecha(registro["fecha_creacion"])
-            self.treeview_manager.actualizar_fila(id_registro, tiempo_formateado, registro["empresa"], registro["concepto"], fecha_formateada, time, registro["fecha_creacion"])
+            fecha_formateada = formatear_fecha(register_dic["fecha_creacion"])
+            self.treeview_manager.actualizar_fila(register_dic["id"], tiempo_formateado, register_dic["empresa"], 
+                                                  register_dic["concepto"], fecha_formateada, time, register_dic["fecha_creacion"])
+
 
     def borrar(self, desde_menu=False):
         """
-        Borra una fila seleccionada o todas las filas con checkbox marcado.
+        Borra una fila seleccionada o todas las filas con checkbox marcado, con confirmación previa.
         """
+        pregunta = "¿Estás seguro de que deseas borrar este registro?"
         if desde_menu:
             if self.treeview_manager.seleccionado:
-                self.db_manager.borrar_registro(self.treeview_manager.seleccionado)
-                self.treeview_manager.borrar_fila(self.treeview_manager.seleccionado)
+                confirmacion = messagebox.askyesno("Confirmación", pregunta)
+                if confirmacion:
+                    self.app.db_manager.borrar_registro(self.treeview_manager.seleccionado)
+                    self.treeview_manager.borrar_fila(self.treeview_manager.seleccionado)
         else:
             items_a_borrar = [item for item in self.treeview_manager.tree.get_children() if self.treeview_manager.tree.item(item, "values")[0] == "✔"]
-            for item in items_a_borrar:
-                self.db_manager.borrar_registro(item)
-                self.treeview_manager.borrar_fila(item)
-            #ocultamos el frame inferior
-            self.treeview_manager.bottom_frame.pack_forget()
 
-        #configuramos estado inicial para empresa no seleccionada
+            if not items_a_borrar:  # Si no hay registros seleccionados, no hacer nada
+                messagebox.showinfo("Información", "No hay registros seleccionados para borrar.")
+                return
+            
+            if len(items_a_borrar) > 1: pregunta = f"¿Estás seguro de que deseas borrar {len(items_a_borrar)} registros?"
+            confirmacion = messagebox.askyesno("Confirmación", pregunta)
+            if confirmacion:
+                for item in items_a_borrar:
+                    self.app.db_manager.borrar_registro(item)
+                    self.treeview_manager.borrar_fila(item)
+
+                # Ocultar el frame inferior solo si hay elementos eliminados
+                self.treeview_manager.bottom_frame.pack_forget()
+
+        # Configurar estado inicial para empresa no seleccionada
         self.app.unselected_partner()
-
-
-    
-    def imputar(self, desde_menu=False):
-        """
-        Imputa registros desde SQLite y los sube a SQL Server.
-        - Si `desde_menu` es True, imputa solo un registro seleccionado.
-        - Si `desde_menu` es False, imputa todos los registros con checkbox marcado.
-        """
-        fecha_actual = return_fecha_actual()
-        print("🔹 Iniciando proceso de imputación...")
-
-        # Obtener los registros a imputar
-        items_a_imputar = []
-
-        if desde_menu:
-            if self.treeview_manager.seleccionado:
-                items_a_imputar.append(self.treeview_manager.seleccionado)
-        else:
-            items_a_imputar = [item for item in self.treeview_manager.tree.get_children() if 
-                               self.treeview_manager.tree.item(item, "values")[0] == "✔"]
-
-        if not items_a_imputar:
-            print("⚠️ No hay registros seleccionados para imputar.")
-            return
-
-        print(f"📂 Registros a imputar: {items_a_imputar}")
-
-        # Paso 1: Actualizar estado en SQLite a "imputando"
-        for item_id in items_a_imputar:
-            self.db_manager.actualizar_registro(
-                item_id,
-                nuevos_valores={"fecha_imputacion": fecha_actual, "state": "imputando"}
-            )
-
-        # Eliminar registros de la interfaz gráfica
-        for item in items_a_imputar:
-            self.treeview_manager.borrar_fila(item)
-
-        #ocultamos el frame inferior
-        self.treeview_manager.bottom_frame.pack_forget()
-        
-        #configuramos estado inicial para empresa no seleccionada
-        self.app.unselected_partner()
-
-        print("🚀 Imputación completada.")
-
 
 
     def editar(self):
         """
         Muestra un popup dentro de la ventana principal sin oscurecer el fondo,
         permitiendo editar los campos en el siguiente orden:
-        Empresa, Usuario, Departamento, Concepto, Observaciones, Fecha Creación y Tiempo.
+        Empresa, Usuario, Departamento, Concepto, descripcion, Fecha Creación y Tiempo.
         La hora original de 'fecha_creacion' se conserva sin que el usuario la modifique.
         """
         if not self.treeview_manager.seleccionado:
@@ -175,7 +142,7 @@ class TasksAdmin:
             return
 
         registro_id = int(self.treeview_manager.seleccionado)
-        registro_dic = self.db_manager.obtener_registro(registro_id)
+        registro_dic = self.app.db_manager.obtener_registro(registro_id)
 
         if registro_dic is None:
             print(f"No se encontró el registro en la base de datos para el ID {registro_id}.")
@@ -218,12 +185,12 @@ class TasksAdmin:
         entry_concepto.grid(row=3, column=1, padx=5, pady=2)
         entries["concepto"] = entry_concepto
 
-        # 5. Observaciones (nuevo, editable, dos líneas; no se muestra en el treeview)
-        tk.Label(popup, text="Observaciones:", bg="white", anchor="nw").grid(row=4, column=0, sticky="nw", padx=5, pady=2)
-        text_observaciones = tk.Text(popup, width=30, height=2)
-        text_observaciones.insert("1.0", str(registro_dic.get("observaciones", "")))
-        text_observaciones.grid(row=4, column=1, padx=5, pady=2)
-        entries["observaciones"] = text_observaciones
+        # 5. descripcion (nuevo, editable, dos líneas; no se muestra en el treeview)
+        tk.Label(popup, text="Descripción:", bg="white", anchor="nw").grid(row=4, column=0, sticky="nw", padx=5, pady=2)
+        text_descripcion = tk.Text(popup, width=30, height=2)
+        text_descripcion.insert("1.0", str(registro_dic.get("descripcion", "")))
+        text_descripcion.grid(row=4, column=1, padx=5, pady=2)
+        entries["descripcion"] = text_descripcion
 
         # 6. Fecha Creación (editar día, mes y año; conservar hora original)
         tk.Label(popup, text="Fecha Creación:", bg="white", anchor="w").grid(row=5, column=0, sticky="w", padx=5, pady=2)
@@ -314,7 +281,7 @@ class TasksAdmin:
         def guardar_cambios():
             # Obtener valores ingresados por el usuario
             concepto = entry_concepto.get()
-            observaciones = text_observaciones.get("1.0", "end-1c")  # Obtiene el texto completo sin el salto de línea final
+            descripcion = text_descripcion.get("1.0", "end-1c")  # Obtiene el texto completo sin el salto de línea final
             
             # Obtener fecha formateada con la hora original
             dia_val = int(spinbox_dia.get())
@@ -345,12 +312,13 @@ class TasksAdmin:
             
             # Valores a actualizar en la base de datos
             nuevos_valores = {
+                "id": registro_id,
                 "concepto": concepto,
-                "observaciones": observaciones,
+                "descripcion": descripcion,
                 "fecha_creacion": nueva_fecha,
                 "tiempo": nuevo_tiempo
             }
-            self.db_manager.actualizar_registro(registro_id, nuevos_valores=nuevos_valores)
+            self.app.db_manager.actualizar_registro(nuevos_valores=nuevos_valores)
 
             # Actualiza el Treeview con los valores recién ingresados
             self.treeview_manager.actualizar_fila(
@@ -372,13 +340,6 @@ class TasksAdmin:
         btn_cancelar = tk.Button(btn_frame, text="Cerrar", command=cerrar_popup, bg="#f44336", fg="white", width=12)
         btn_cancelar.pack(side=tk.RIGHT, padx=5)
 
-
-
-
-
-
-
-
     def pack_forget(self):
         """
         Oculta el Treeview y su contenedor.
@@ -391,4 +352,135 @@ class TasksAdmin:
         """
         self.frame.pack(fill="both", expand=True)  # Muestra el frame completo
 
+    
+    def set_imputacion(self, register_dic):
+        fecha_actual = return_fecha_actual()
+        register_dic["fecha_imputacion"] = fecha_actual
+        register_dic["state"] = "imputando"
+        self.app.db_manager.actualizar_registro(nuevos_valores=register_dic)
+
+
+    def imputar(self, desde_menu=False):
+        """
+        Imputa registros desde SQLite y los sube a SQL Server.
+        - Si `desde_menu` es True, imputa solo un registro seleccionado.
+        - Si `desde_menu` es False, imputa todos los registros con checkbox marcado.
+        """
+
+        print("🔹 Iniciando proceso de imputación...")
+
+        # Obtener los registros a imputar
+        items_a_imputar = []
+
+        if desde_menu:
+            if self.treeview_manager.seleccionado:
+                items_a_imputar.append(self.treeview_manager.seleccionado)
+        else:
+            items_a_imputar = [item for item in self.treeview_manager.tree.get_children() if 
+                               self.treeview_manager.tree.item(item, "values")[0] == "✔"]
+
+        if not items_a_imputar:
+            print("⚠️ No hay registros seleccionados para imputar.")
+            return
+
+        print(f"📂 Registros a imputar: {items_a_imputar}")
+
+        imputados = []
+        for item_id in items_a_imputar:
+            register_dic = self.app.db_manager.obtener_registro(item_id)
+            
+            if register_dic["vinculada"]:
+                self.set_imputacion(register_dic)
+                imputados.append(item_id)
+            else: #empresa a imputar sin crear en sistemas
+                respuesta = messagebox.askyesno("Advertencia",
+                                                "No se pueden imputar empresas no creadas en sistemas.\n\n"
+                                                "Para poderla imputar, tiene que vincular la empresa temporal a una real.\n\n"
+                                                "¿Desea vincular la empresa ahora?",
+                                                parent=self.app.root)  # Centrar en la ventana principal
+            if respuesta:  # Si elige "Vincular"
+                popup = VinculacionPopup(self.app.root, self.app.session, register_dic,
+                                       lambda et, er: self.app.session.vincular_nueva_empresa(et, er))
+                self.app.root.wait_window(popup)
+            else:
+                # Si elige "Cerrar", simplemente se cierra el mensaje sin hacer nada
+                return
+
+        for item in imputados:
+            self.treeview_manager.borrar_fila(item)
+
+        self.treeview_manager.bottom_frame.pack_forget()
+        self.app.unselected_partner()
+
+        print("🚀 Imputación completada.")
+
+
+
+class VinculacionPopup(tk.Toplevel):
+    def __init__(self, root, session, empresa_temp_dic, callback):
+        super().__init__(root)        
         
+        self.session = session
+        self.empresa_temp_dic = empresa_temp_dic
+        self.callback = callback
+
+        self.title("Vincular tarea a empresa real")
+
+        # Centrar la ventana en la pantalla
+        self.update_idletasks()  # Asegura que las dimensiones son correctas antes de posicionar
+        ancho_ventana = 700
+        alto_ventana = 200
+
+        # Obtener dimensiones de la ventana principal (root)
+        ancho_pantalla = root.winfo_width()
+        alto_pantalla = root.winfo_height()
+        pos_x = root.winfo_x() + (ancho_pantalla // 2) - (ancho_ventana // 2)
+        pos_y = root.winfo_y() + (alto_pantalla // 2) - (alto_ventana // 2)
+
+        # Aplicar nueva posición
+        self.geometry(f"{ancho_ventana}x{alto_ventana}+{pos_x}+{pos_y}")
+
+        # Hace que el popup sea modal (bloquea la ventana principal)
+        self.transient(root)
+        self.grab_set()
+        self.focus_set() # Mantiene el popup en primer plano y enfocado
+
+        # Extraer datos de empresa y cif del diccionario de empresa temporal
+        empresa_nombre = self.empresa_temp_dic.get("empresa", "Desconocida")  # Si no existe, pone "Desconocida"
+        empresa_cif = self.empresa_temp_dic.get("cif", "N/A")  # Si no existe, pone "N/A"
+        
+        # Frame para la información de la empresa temporal
+        frame_temp = tk.Frame(self)
+        frame_temp.pack(pady=10, padx=10, fill="x")
+
+        # Etiqueta Empresa
+        label_empresa = tk.Label(frame_temp, text=f"Empresa: {empresa_nombre}", font=("Arial", 10, "bold"))
+        label_empresa.pack(anchor="w")
+
+        # Etiqueta CIF
+        label_cif = tk.Label(frame_temp, text=f"CIF: {empresa_cif}", font=("Arial", 10))
+        label_cif.pack(anchor="w")
+
+        # Frame de búsqueda para la empresa real (parte inferior)
+        self.frame_real = BusquedaFrame(self, session, "Empresa:", callback=None)
+        self.frame_real.pack(pady=10, padx=10, fill="x")
+
+        #rellenamos el frame_real con empresas reales
+        empresas_dic = self.session.return_empresas_combo_values(todas=False, create=False)
+        self.frame_real.configurar_combobox(empresas_dic, seleccion="Selecciona Empresa")
+        
+        # Botón de confirmación
+        btn_confirmar = ttk.Button(self, text="Confirmar", command=self.confirmar)
+        btn_confirmar.pack(pady=10)
+
+
+    def confirmar(self):
+        empresa_real = self.frame_real.combobox.get()
+        print(f"Seleccionado: {self.empresa_temp_dic} y {empresa_real}")
+        #self.callback(self.empresa_temp_dic, empresa_real)
+
+        self.app.unselected_partner()
+
+        # Verificar antes de destruir la ventana
+        if self.winfo_exists():
+            self.destroy()

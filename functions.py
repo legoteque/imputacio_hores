@@ -19,6 +19,8 @@ COLORES = {
     "rojo2": "#dc3545",
     "rojo_hover": "#c82333",
     "rojo_oscuro": "#e74c3c",
+    "granate": "#8B0000",
+    "verde_lcd": "#90EE90",
     "verde_claro": "#90EE90",
     "verde": "#2ecc71",
     "verde2": "#28a745",
@@ -64,22 +66,27 @@ def configure_styles():
 
     # Estilo de Labels
     style.configure("TLabel", font=("Segoe UI", 10, "bold"), background=COLORES["rojo_oscuro"], foreground=COLORES["azul_claro"])
-    style.configure("Timer.TLabel", font=("Segoe UI", 14, "bold"), background=COLORES["rojo_oscuro"], foreground=COLORES["blanco"])
-    style.configure("PTimer.TLabel", font=("Segoe UI", 14, "bold"), background=COLORES["rojo_oscuro"], foreground=COLORES["gris_claro"])
+    # Estilos personalizados
+    style.configure("Timer.TLabel", font=("OCR A Extended", 22, "bold"), background=COLORES["negro"], foreground=COLORES["verde_lcd"],
+                    padding=3, relief="solid", borderwidth=5, anchor="center")
+    style.configure("PTimer.TLabel", font=("OCR A Extended", 22, "bold"), background=COLORES["negro"], foreground=COLORES["gris_claro"],
+                    padding=3, relief="solid", borderwidth=5, anchor="center")
+    
+    style.configure("Main.TLabel", font=("Segoe UI", 11, "bold"), background=COLORES["granate"], foreground=COLORES["blanco"],
+                    padding=(3), relief="solid", borderwidth=5, anchor="center")
 
-
-    # Estilos de LabelFrame (para observaciones)
+    # Estilos de LabelFrame (para descripcion)
     style.configure("TLabelFrame", font=("Segoe UI", 11, "bold"), background="white", foreground="black", relief="solid", padding=5)
 
     # Estilos de LabelFrame dentro (label interior)
     style.configure("TLabelFrame.Label", font=("Segoe UI", 11, "bold"), foreground="black")
 
     # Estilo de Entries
-    style.configure("TEntry", font=("Segoe UI", 11), padding=8, relief="flat", fieldbackground=COLORES["blanco"])
+    style.configure("TEntry", font=("Segoe UI", 11), padding=(3), relief="flat", fieldbackground=COLORES["blanco"])
     style.map("TEntry", background=[("focus", COLORES["azul_claro"])])  # Azul claro en foco
 
     # Estilo de combobox
-    style.configure("TCombobox", font=("Segoe UI", 11), padding=4, relief="flat")
+    style.configure("TCombobox", font=("Segoe UI", 11), padding=(3), relief="flat")
 
     # Estilo de Botones (flat con hover)
     style.configure("Flat.TButton", font=("Segoe UI", 11, "bold"), padding=10, foreground="white", background="#007bff", relief="flat")
@@ -95,21 +102,23 @@ def configure_styles():
     style.map("Logout.TButton", background=[("active", COLORES["rojo_oscuro"])])
 
     # Estilo verde
-    style.configure("Green.TButton", font=("Segoe UI", 14, "bold"), padding=5, foreground=COLORES["blanco"], background=COLORES["verde"])
-    style.map("Green.TButton", background=[("active", COLORES["verde_hover"])])
+    style.configure("Play.TButton", font=("Segoe UI", 14, "bold"), foreground=COLORES["blanco"], background=COLORES["verde"], 
+                    padding=5, relief="solid", borderwidth=5)
+    style.map("Play.TButton", background=[("active", COLORES["verde_hover"])])
 
     # Estilo rojo
-    style.configure("Red.TButton", font=("Segoe UI", 14, "bold"), padding=5, foreground=COLORES["blanco"], background=COLORES["rojo"])
-    style.map("Red.TButton", background=[("active", COLORES["rojo_oscuro"])])
+    style.configure("Stop.TButton", font=("Segoe UI", 14, "bold"), foreground=COLORES["blanco"], background=COLORES["rojo"], 
+                    padding=5, relief="solid", borderwidth=5)
+    style.map("Stop.TButton", background=[("active", COLORES["rojo_oscuro"])])
 
     # 🔹 Estilo para el botón de pausa (gris claro)
-    style.configure("Pause.TButton", font=("Segoe UI", 14, "bold"), padding=5, foreground=COLORES["blanco"], 
-                    background=COLORES["gris_claro"], borderwidth=1)
+    style.configure("Pause.TButton", font=("Segoe UI", 14, "bold"), foreground=COLORES["blanco"], background=COLORES["gris_claro"], 
+                    padding=5, relief="solid", borderwidth=5)
     style.map("Pause.TButton", background=[("active", COLORES["gris_oscuro"])])  # Gris más oscuro al pasar el mouse
 
     # 🔹 Estilo para el botón de reanudar (verde claro)
-    style.configure("Reanudar.TButton", font=("Segoe UI", 14, "bold"), padding=5, foreground=COLORES["blanco"],
-                    background=COLORES["verde_claro"], borderwidth=1)
+    style.configure("Reanudar.TButton", font=("Segoe UI", 14, "bold"), foreground=COLORES["blanco"], background=COLORES["verde_claro"], 
+                    padding=5, relief="solid", borderwidth=5)
     style.map("Reanudar.TButton", background=[("active", COLORES["verde_oscuro"])])  # Verde más oscuro al pasar el mouse
 
 

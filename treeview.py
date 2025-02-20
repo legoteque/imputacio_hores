@@ -92,7 +92,7 @@ class TreeviewManager:
         """
         Actualiza una fila en el Treeview.
         """
-        self.tree.item(registro_id, values=(" ", tiempo_formateado, empresa, concepto, fecha_formateada, tiempo_original, fecha_original))
+        self.tree.item(str(registro_id), values=(" ", tiempo_formateado, empresa, concepto, fecha_formateada, tiempo_original, fecha_original))
 
     def borrar_fila(self, registro_id):
         """
