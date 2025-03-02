@@ -1,67 +1,111 @@
 import pyodbc
+from datetime import datetime
+import pandas as pd
+from tkinter import messagebox
 
-# Configuración de conexión
-SQL_SERVER = '89.117.61.152'
-SQL_DATABASE = 'ETL_DATA'
-SQL_USERNAME = 'airflow'
-SQL_PASSWORD = 'sqlHPml350+'
+class SQLServerManager:
+    def __init__(self, root, sqlserver_config):
+        self.root = root
+        self.sqlserver_config = sqlserver_config
+        self.connection = None
+        self.cursor = None
+        conectado = self.comprobar_conexion()
 
-def conectar_sql():
-    """ Establece la conexión con SQL Server y devuelve el cursor y la conexión """
-    try:
-        conn = pyodbc.connect(f'DRIVER={{SQL Server}};SERVER={SQL_SERVER};DATABASE={SQL_DATABASE};UID={SQL_USERNAME};PWD={SQL_PASSWORD}')
-        cursor = conn.cursor()
-        return conn, cursor
-    except Exception as e:
-        print(f"❌ Error conectando a SQL Server: {e}")
-        return None, None
+    def comprobar_conexion(self):
+        """Verifica la conexión a SQL Server. Si es exitosa, devuelve True y genera el cursor.
+           Si falla, muestra un mensaje de error en Tkinter y devuelve False.
+        """
+        try:
+            # Intentar conectar con SQL Server
+            self.connection = pyodbc.connect(
+                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                f"SERVER={self.sqlserver_config['server']};"
+                f"DATABASE={self.sqlserver_config['database']};"
+                f"UID={self.sqlserver_config['username']};"
+                f"PWD={self.sqlserver_config['password']}",
+                timeout=5
+            )
+            self.cursor = self.connection.cursor()
+            #print("✅ Conexión exitosa a SQL Server.")
+            return True
 
-def insertar_registros(datos):
-    """
-    Inserta registros en la tabla 'imputacion_tiempos' en SQL Server.
-    `datos` debe ser una lista de tuplas con los valores correspondientes.
-    """
-    conn, cursor = conectar_sql()
-    if not conn:
-        return False  # Falla la conexión
+        except pyodbc.Error as e:
+            # Crear ventana de error con Tkinter
+            messagebox.showerror("Error de conexión", f"No se pudo conectar a SQL Server:\n{e}")
+            #print(f"❌ Error de conexión a SQL Server: {e}")
+            return False
 
-    try:
-        cursor.executemany("""
-            INSERT INTO imputacion_tiempos (tiempo, empresa, concepto, fecha_creacion, fecha_imputacion, state, [user], departamento, descripcion)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, datos)
-        conn.commit()
-        print(f"✅ {len(datos)} registros insertados en SQL Server.")
-        return True  # Inserción exitosa
-    except Exception as e:
-        print(f"❌ Error insertando en SQL Server: {e}")
-        return False
-    finally:
-        conn.close()
+    def subir_registros(self, db_manager, user) -> None:
+        """
+        Sube registros desde SQLite a SQL Server.
+        """
+        registros = db_manager.obtener_registros_imputando(user)
+        if not registros:
+            return
+        
+        #print(f"Subiendo {len(registros)} registros a SQL Server...")
 
+        for registro in registros:
+            # Convertir fechas a datetime antes de insertarlas en SQL Server
+            fecha_creacion = datetime.strptime(registro["fecha_creacion"], "%Y-%m-%d %H:%M")
+            fecha_imputacion = datetime.strptime(registro["fecha_imputacion"], "%Y-%m-%d %H:%M")
+            
+            insert_query = """
+                INSERT INTO imputado (tiempo, empresa, concepto, fecha_creacion, fecha_imputacion, usuario, departamento, descripcion, cif)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            valores = (
+                registro["tiempo"], registro["empresa"], registro["concepto"], fecha_creacion, fecha_imputacion,
+                registro["user"], registro["departamento"], registro["descripcion"], registro["cif"])
 
+            try:
+                self.cursor.execute(insert_query, valores)
+                self.connection.commit()
 
-# Obtener los datos de los registros imputados para SQL Server
-datos_a_subir = []
-for item_id in items_a_imputar:
-    registro = self.db_manager.obtener_registro(item_id)
-    if registro:
-        datos_a_subir.append((
-            registro["tiempo"], registro["empresa"], registro["concepto"],
-            registro["fecha_creacion"], registro["fecha_imputacion"], 
-            registro["state"], registro["user"], registro["departamento"], ''
-        ))
+                #print(f"Registro ID {registro['id']} subido correctamente.")
 
-if not datos_a_subir:
-    print("⚠️ No se encontraron datos para subir a SQL Server.")
-    return
+                # Actualizar estado en SQLite a 'imputado'
+                db_manager.actualizar_registro(nuevos_valores={"id":registro["id"], "state": "imputado"})
+            
+            except pyodbc.Error as e:
+                #print(f"Error insertando en SQL Server: {e}")
+                pass
 
-# Paso 2: Subir datos a SQL Server
-if insertar_registros(datos_a_subir):
-    # Paso 3: Confirmar en SQLite que los registros fueron imputados correctamente
-    for item_id in items_a_imputar:
-        db_manager.actualizar_registro(item_id, nuevos_valores={"state": "imputado"})
+    def load_empleados_sql(self):
+        """Carga los empleados desde SQL Server en un DataFrame de pandas."""
+        query = """
+            SELECT id, name, department_id, work_email, department_name 
+            FROM empleados
+            WHERE department_name IS NOT NULL AND department_name != 'Administration'
+        """
+        
+        try:
+            empleados_df = pd.read_sql_query(query, self.connection)
+            empleados_l = empleados_df['name'].tolist()  # Lista de nombres
+            return empleados_l, empleados_df
+        except Exception as e:
+            #print(f"Error al cargar empleados desde SQL Server: {e}")
+            return [], pd.DataFrame()
 
-    print(f"✅ Registros {items_a_imputar} imputados correctamente en SQL Server y actualizados en SQLite.")
-else:
-    print(f"❌ Error en la conexión a SQL Server. Los registros quedan en estado 'imputando'.")
+    def load_empresas_sql(self):
+        """Carga las empresas desde SQL Server en un DataFrame de pandas."""
+        query = "SELECT id, name, vat FROM empresas"
+        
+        try:
+            empresas_df = pd.read_sql_query(query, self.connection)
+            return empresas_df
+        except Exception as e:
+            #print(f"Error al cargar empresas desde SQL Server: {e}")
+            return pd.DataFrame()
+   
+    def obtener_estructura_tabla(self, tabla):
+        """ Obtener estructura de la tabla en SQL Server"""
+        self.cursor.execute(f"SELECT COLUMN_NAME, DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{tabla}'")
+        columnas = self.cursor.fetchall()
+        return columnas
+    
+    def obtener_datos_tabla(self, tabla):
+        # Obtener datos de la tabla
+        self.cursor.execute(f"SELECT * FROM {tabla}")
+        datos = self.cursor.fetchall()
+        return datos

@@ -1,14 +1,35 @@
-import os, ctypes
+import os, sys, ctypes
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox
 from sqlite import DatabaseManager
+from sql_server import SQLServerManager
 from session_manager import SessionManager
 from systray_manager import SystrayManager
 from search_frame import BusquedaFrame
-from functions import procesar_nombre, seconds_to_string, configure_styles, return_fecha_actual
-from functions import COLORES, ICON, DB_PATH
+from functions import procesar_nombre, seconds_to_string, configure_styles
+from functions import return_fecha_actual, verificar_o_crear_carpeta_archivos
+from functions import COLORES, ICON, DB_PATH, SQLSERVER_CONFIG
 from register import TasksAdmin
 
+
+
+if sys.platform == "win32":
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    os.environ["TQDM_DISABLE"] = "True"
+
+# 🔹 Solución para evitar el error en el ejecutable
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w")
+
+from tqdm import tqdm
+tqdm_kwargs = {"file": sys.stderr}  # Evitar errores de escritura
+for i in tqdm(range(100), **tqdm_kwargs):
+    pass
+
+import warnings
+warnings.simplefilter("ignore", category=UserWarning)
 
 
 class ImputacionesApp:
@@ -21,10 +42,15 @@ class ImputacionesApp:
         self.empresas_dic = {}
         self.empresas_suasor = {}
 
+        #verifica o crea si existe la carpeta archivos:
+        verificar_o_crear_carpeta_archivos()
+
         # Inicialización de widgets y managers
         self.configure_root()
         configure_styles()
 
+        #instanciamos el objeto sql_server_manager para abrir una conexion al sqlserver
+        self.sql_server_manager = SQLServerManager(self.root, SQLSERVER_CONFIG)
         self.db_manager = DatabaseManager(self, DB_PATH)
         self.session = SessionManager(self)
         self.systray = SystrayManager(self, ICON, "SIN USUARIO")
@@ -57,6 +83,9 @@ class ImputacionesApp:
         self.empresas_suasor, self.empresas_dic = self.session.return_empresas_combo_values()
         #cargamos el sqlite al treeview con los registros del usuario
         self.tasks_admin.cargar_datos_desde_sqlite()
+
+        #miramos y subimos si hay registros imputando (pendientes de imputar en el sqlserver) para el usuario
+        self.sql_server_manager.subir_registros(self.db_manager, self.session.user)
         
         self.set_login_state()
 
@@ -119,23 +148,26 @@ class ImputacionesApp:
         if not nueva_empresa: return
         nueva_empresa = nueva_empresa.strip().upper()  # Normalizar a mayúsculas
 
-        # Verificar si el nombre ya existe
+         # Verificar si el nombre ya existe
         if nueva_empresa in self.empresas_dic.keys():
-            messagebox.showerror("Error", f"La empresa '{nueva_empresa}' ya está registrada.", parent=self.root)
+            cif_existente = self.empresas_dic[nueva_empresa]  # Obtener el CIF asociado
+            messagebox.showerror("Error", f"La empresa '{nueva_empresa}' ya existe en el listado de empresas seleccionables con el CIF '{cif_existente}'.", 
+                                 parent=self.root)
             return
 
         # Pedir número VAT
-        nuevo_vat = simpledialog.askstring("Número VAT", "Ingrese el número de identificación fiscal (CIF):", parent=self.root).strip()
-        if not nuevo_vat: return
-        nuevo_vat = nuevo_vat.strip().upper()  # Normalizar a mayúsculas
+        nuevo_cif = simpledialog.askstring("Número VAT", "Ingrese el número de identificación fiscal (CIF):", parent=self.root).strip()
+        if not nuevo_cif: return
+        nuevo_cif = nuevo_cif.strip().upper()  # Normalizar a mayúsculas
 
         # Verificar si el VAT ya existe
-        if nuevo_vat in self.empresas_dic.values():
-            empresa_existente = [key for key, value in self.empresas_dic.items() if value == nuevo_vat][0]
-            messagebox.showerror("Error", f"El VAT '{nuevo_vat}' ya está registrado para '{empresa_existente}'.", parent=self.root)
+        if nuevo_cif in self.empresas_dic.values():
+            empresa_existente = [key for key, value in self.empresas_dic.items() if value == nuevo_cif][0]
+            messagebox.showerror("Error", f"El CIF '{nuevo_cif}' ya existe en el listado de empresas seleccionables para la empresa '{empresa_existente}'.", 
+                                 parent=self.root)
             return
 
-        return nueva_empresa, nuevo_vat
+        return nueva_empresa, nuevo_cif
 
     
     def restored_task(self, register_dic):
@@ -294,7 +326,7 @@ class ImputacionesApp:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
         self.root.iconbitmap(ICON)
     
-        #self.minimize_to_systray()  # Ocultar la ventana al inicio
+        #intercepta el evento de cerrar la ventana y ejecuta el método self.minimize_to_systray
         self.root.protocol("WM_DELETE_WINDOW", self.minimize_to_systray)
         
     def minimize_to_systray(self):
@@ -303,7 +335,8 @@ class ImputacionesApp:
             if self.root.winfo_exists():  # Verifica si la ventana aún existe
                 self.root.withdraw()  # Oculta la ventana principal
         except Exception as e:
-            print(f"Error al minimizar a la bandeja del sistema: {e}")   
+            #print(f"Error al minimizar a la bandeja del sistema: {e}")
+            pass
 
     def quit_application(self):
         """Función para salir completamente de la aplicación."""
@@ -312,7 +345,8 @@ class ImputacionesApp:
                 self.systray.quit_application()  # Detiene el systray
             self.root.destroy()  # Cierra la ventana de tkinter
         except Exception as e:
-            print(f"Error al cerrar la aplicación: {e}")
+            #print(f"Error al cerrar la aplicación: {e}")
+            pass
         finally:
             os._exit(0)  # Fuerza la salida del programa
 
@@ -574,7 +608,7 @@ class ImputacionesApp:
     def set_empresa_seleccionada_state(self, new_time=None):
         """Estado: Empresa seleccionada, contador detenido."""
 
-        print(self.register_dic)
+        #print(self.register_dic)
 
         self.configurar_label(widget="selected_empresa_label", mostrar=True, texto=self.register_dic["empresa"])
         self.configurar_label(widget="selected_cif_label", mostrar=True, texto=self.register_dic["cif"])

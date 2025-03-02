@@ -125,7 +125,7 @@ class TreeviewManager:
 
         for item in self.tree.get_children(""):
             valor = self.tree.set(item, columna_orden)
-            print(f"Item: {item}, Valor en columna '{columna_orden}': {valor}")
+            #print(f"Item: {item}, Valor en columna '{columna_orden}': {valor}")
 
         # Obtener todos los elementos del Treeview
         items = []
@@ -175,7 +175,7 @@ class TreeviewManager:
         # Verificar si todos los checkboxes están marcados (última columna)
         todos_seleccionados = all(self.tree.item(item, "values")[0] == "✔" for item in self.tree.get_children())
 
-        print("todos seleccionados?", todos_seleccionados)
+        #print("todos seleccionados?", todos_seleccionados)
 
         # Determinar el nuevo estado a aplicar
         nuevo_estado = " " if todos_seleccionados else "✔"
@@ -238,7 +238,7 @@ class TreeviewManager:
         Maneja el clic izquierdo en el Treeview.
         Siempre deselecciona filas, pero el resto del proceso depende de si está habilitado o no.
         """
-        print("click izquierdo")
+        #print("click izquierdo")
         self.deseleccionar_fila()  # Siempre ejecuta esto
 
         if not self.interaccion_treeview:
@@ -250,7 +250,7 @@ class TreeviewManager:
             item = self.tree.identify_row(event.y)
 
             # Depuración: Mostrar información del clic
-            print(f"Clic izquierdo: región={region}, columna={column}, fila={item}")
+            #print(f"Clic izquierdo: región={region}, columna={column}, fila={item}")
 
             if not item:
                 return  # Si no se identifica una fila, no hacer nada
@@ -269,7 +269,8 @@ class TreeviewManager:
                 self.register.recuperar(item)
 
         except Exception as e:
-            print(f"Error al manejar el clic izquierdo: {e}")
+            #print(f"Error al manejar el clic izquierdo: {e}")
+            pass
 
 
 
@@ -308,7 +309,7 @@ class TreeviewManager:
                 self.menu_contextual.entryconfigure(0, label=valores[2])
                 self.menu_contextual.post(event.x_root, event.y_root)
             else:
-                print(f"No hay valores en la fila {item}.")
+                #print(f"No hay valores en la fila {item}.")
                 self.seleccionado = None
         else:
             self.seleccionado = None
@@ -344,7 +345,3 @@ class TreeviewManager:
                 else:
                     self.tree.item(id_fila, tags=("highlighted",))
                     self.tree.tag_configure("highlighted", background=color, foreground="black")
-            else:
-                print(f"ID de fila {id_fila} no encontrado en el Treeview.")
-        else:
-            print("Se requiere un ID de fila para aplicar un color específico.")

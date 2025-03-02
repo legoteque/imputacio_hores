@@ -47,7 +47,7 @@ class TasksAdmin:
         Recupera información de la fila seleccionada y maneja errores.
         """
         if not item:
-            print("Error: Se intentó recuperar un ítem inválido.")
+            #print("Error: Se intentó recuperar un ítem inválido.")
             return
 
         try:
@@ -55,17 +55,18 @@ class TasksAdmin:
             registro_id = str(item)
             register_dic = self.app.db_manager.obtener_registro(registro_id)
 
-            print(register_dic)
+            #print(register_dic)
 
             if register_dic != None:
                 # Recuperar datos del registro
                 self.app.restored_task(register_dic)
             else:
-                print(f"No se encontró el registro en la base de datos para el ID {registro_id}.")
+                #print(f"No se encontró el registro en la base de datos para el ID {registro_id}.")
                 return
 
         except Exception as e:
-            print(f"Error al recuperar información de la fila {item}: {e}")
+            #print(f"Error al recuperar información de la fila {item}: {e}")
+            pass
 
     
     def nuevo_registro(self, time, register_dic):
@@ -87,7 +88,7 @@ class TasksAdmin:
         """
         Actualiza el tiempo de un registro en el Treeview y en la base de datos.
         """
-        print(register_dic)
+        #print(register_dic)
         self.app.db_manager.actualizar_registro(nuevos_valores=register_dic, tiempo=time)
 
 
@@ -102,7 +103,7 @@ class TasksAdmin:
         """
         Borra una fila seleccionada o todas las filas con checkbox marcado, con confirmación previa.
         """
-        pregunta = "¿Estás seguro de que deseas borrar este registro?"
+        pregunta = "¿Estás segur@ de que deseas borrar este registro?"
         if desde_menu:
             if self.treeview_manager.seleccionado:
                 confirmacion = messagebox.askyesno("Confirmación", pregunta)
@@ -116,7 +117,7 @@ class TasksAdmin:
                 messagebox.showinfo("Información", "No hay registros seleccionados para borrar.")
                 return
             
-            if len(items_a_borrar) > 1: pregunta = f"¿Estás seguro de que deseas borrar {len(items_a_borrar)} registros?"
+            if len(items_a_borrar) > 1: pregunta = f"¿Estás segur@ de que deseas borrar {len(items_a_borrar)} registros?"
             confirmacion = messagebox.askyesno("Confirmación", pregunta)
             if confirmacion:
                 for item in items_a_borrar:
@@ -138,14 +139,14 @@ class TasksAdmin:
         La hora original de 'fecha_creacion' se conserva sin que el usuario la modifique.
         """
         if not self.treeview_manager.seleccionado:
-            print("No hay un registro seleccionado para editar.")
+            #print("No hay un registro seleccionado para editar.")
             return
 
         registro_id = int(self.treeview_manager.seleccionado)
         registro_dic = self.app.db_manager.obtener_registro(registro_id)
 
         if registro_dic is None:
-            print(f"No se encontró el registro en la base de datos para el ID {registro_id}.")
+            #print(f"No se encontró el registro en la base de datos para el ID {registro_id}.")
             return
 
         popup = tk.Frame(self.app.root, bg="white", relief=tk.RAISED, borderwidth=2, padx=10, pady=10)
@@ -360,6 +361,8 @@ class TasksAdmin:
         self.app.db_manager.actualizar_registro(nuevos_valores=register_dic)
 
 
+
+
     def imputar(self, desde_menu=False):
         """
         Imputa registros desde SQLite y los sube a SQL Server.
@@ -367,7 +370,7 @@ class TasksAdmin:
         - Si `desde_menu` es False, imputa todos los registros con checkbox marcado.
         """
 
-        print("🔹 Iniciando proceso de imputación...")
+        #print("🔹 Iniciando proceso de imputación...")
 
         # Obtener los registros a imputar
         items_a_imputar = []
@@ -380,10 +383,22 @@ class TasksAdmin:
                                self.treeview_manager.tree.item(item, "values")[0] == "✔"]
 
         if not items_a_imputar:
-            print("⚠️ No hay registros seleccionados para imputar.")
+            #print("⚠️ No hay registros seleccionados para imputar.")
+            return
+        
+        # Definir el mensaje de confirmación
+        if len(items_a_imputar) == 1:
+            pregunta = "¿Estás segur@ que deseas imputar este registro?"
+        else:
+            pregunta = f"¿Estás segur@ que deseas imputar estos {len(items_a_imputar)} registros?"
+
+        respuesta_usuario = messagebox.askyesno("Confirmación de Imputación", pregunta, parent=self.app.root)
+        if not respuesta_usuario:
+            #print("🚫 Imputación cancelada por el usuario.")
             return
 
-        print(f"📂 Registros a imputar: {items_a_imputar}")
+
+        #print(f"📂 Registros a imputar: {items_a_imputar}")
 
         imputados = []
         for item_id in items_a_imputar:
@@ -398,31 +413,48 @@ class TasksAdmin:
                                                 "Para poderla imputar, tiene que vincular la empresa temporal a una real.\n\n"
                                                 "¿Desea vincular la empresa ahora?",
                                                 parent=self.app.root)  # Centrar en la ventana principal
-            if respuesta:  # Si elige "Vincular"
-                popup = VinculacionPopup(self.app.root, self.app.session, register_dic,
-                                       lambda et, er: self.app.session.vincular_nueva_empresa(et, er))
-                self.app.root.wait_window(popup)
-            else:
-                # Si elige "Cerrar", simplemente se cierra el mensaje sin hacer nada
-                return
+                if respuesta:  # Si elige "Vincular"
+                    popup = VinculacionPopup(self, self.app.root, self.session, register_dic)
+                    self.app.root.wait_window(popup)
+                    
+                    #print("popup.vinculado:", popup.vinculado)
 
-        for item in imputados:
-            self.treeview_manager.borrar_fila(item)
+                    if popup.vinculado:
+                        #volvemos a leer los datos cambiados en la clase VinculacionPopup
+                        register_dic = self.app.db_manager.obtener_registro(item_id)
+                        self.set_imputacion(register_dic)
+                        imputados.append(item_id)
+                else:
+                    # Si elige "Cerrar", simplemente se cierra el mensaje sin hacer nada
+                    self.app.unselected_partner()
+                    return
 
-        self.treeview_manager.bottom_frame.pack_forget()
-        self.app.unselected_partner()
 
-        print("🚀 Imputación completada.")
+        if len(imputados) != 0:
+            #recarreguem el treeview amb les noves dades
+            self.cargar_datos_desde_sqlite()
+
+            #miramos y subimos si hay registros imputando (pendientes de imputar en el sqlserver) para el usuario
+            self.app.sql_server_manager.subir_registros(self.app.db_manager, self.app.session.user)
+
+            self.treeview_manager.bottom_frame.pack_forget()
+            self.app.unselected_partner()
+
+            #print("🚀 Imputación completada.")
+
+
 
 
 
 class VinculacionPopup(tk.Toplevel):
-    def __init__(self, root, session, empresa_temp_dic, callback):
-        super().__init__(root)        
+    def __init__(self, tasks_admin, root, session, empresa_temp_dic):
+        super().__init__(root)
+
+        self.vinculado = False
         
-        self.session = session
+        self.tasks_admin = tasks_admin
+        self.db_manager = tasks_admin.app.db_manager
         self.empresa_temp_dic = empresa_temp_dic
-        self.callback = callback
 
         self.title("Vincular tarea a empresa real")
 
@@ -466,8 +498,8 @@ class VinculacionPopup(tk.Toplevel):
         self.frame_real.pack(pady=10, padx=10, fill="x")
 
         #rellenamos el frame_real con empresas reales
-        empresas_dic = self.session.return_empresas_combo_values(todas=False, create=False)
-        self.frame_real.configurar_combobox(empresas_dic, seleccion="Selecciona Empresa")
+        self.empresas_dic = session.return_empresas_combo_values(todas=False, create=False)
+        self.frame_real.configurar_combobox(self.empresas_dic, seleccion="Selecciona Empresa")
         
         # Botón de confirmación
         btn_confirmar = ttk.Button(self, text="Confirmar", command=self.confirmar)
@@ -476,10 +508,14 @@ class VinculacionPopup(tk.Toplevel):
 
     def confirmar(self):
         empresa_real = self.frame_real.combobox.get()
-        print(f"Seleccionado: {self.empresa_temp_dic} y {empresa_real}")
-        #self.callback(self.empresa_temp_dic, empresa_real)
 
-        self.app.unselected_partner()
+        # Obtener el CIF de la empresa real desde el diccionario interno
+        cif_real = self.empresas_dic.get(empresa_real)
+
+        #vinculamos todos los valores de la nueva empresa temporal en la base de datos de registros
+        self.db_manager.vincular_empresa(self.empresa_temp_dic["empresa"], empresa_real, cif_real)
+
+        self.vinculado = True
 
         # Verificar antes de destruir la ventana
         if self.winfo_exists():

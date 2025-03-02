@@ -55,7 +55,7 @@ class SystrayManager:
         try:
             icon_image = Image.open(self.icon_path)
         except Exception as e:
-            print(f"Error al cargar el ícono: {e}")
+            #print(f"Error al cargar el ícono: {e}")
             return  # Salir de la función si el ícono no se carga
 
         # Crear el ícono del systray con el menú
@@ -112,8 +112,6 @@ class SystrayManager:
                 if updated_item != current_item:
                     self.menu_items[item_name] = updated_item
                     menu_updated = True
-            else:
-                print(f"Ítem '{item_name}' no encontrado en el menú del systray.")
 
         if menu_updated and self.icon:
             new_menu = Menu(*self.menu_items.values())

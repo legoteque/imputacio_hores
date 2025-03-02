@@ -1,5 +1,7 @@
 import sqlite3
+import pandas as pd
 from datetime import datetime
+from decimal import Decimal
 from typing import Dict, Any, List, Optional
 
 # Definición centralizada de las columnas y sus tipos, incluyendo 'descripcion'
@@ -27,6 +29,8 @@ class DatabaseManager:
         self.conexion = sqlite3.connect(db_path)
         self.cursor = self.conexion.cursor()
         self._crear_tabla()
+        self.sincronizar_tabla("empleados")
+        self.sincronizar_tabla("empresas")
 
     def _crear_tabla(self) -> None:
         """
@@ -41,6 +45,111 @@ class DatabaseManager:
         """
         self.cursor.execute(query)
         self.conexion.commit()
+
+
+    def sincronizar_tabla(self, tabla_origen, tabla_destino=None):
+        """Sincroniza todos los datos de una tabla de SQL Server a SQLite."""
+        if tabla_destino is None:
+            tabla_destino = tabla_origen
+
+        # 1️⃣ Verificar conexión a SQL Server
+        if not self.app.sql_server_manager.comprobar_conexion():
+            return
+
+        try:
+            # 2️⃣ Iniciar transacción en SQLite
+            self.cursor.execute("BEGIN TRANSACTION")
+            
+            # 3️⃣ Eliminar tabla en SQLite si existe
+            self.cursor.execute(f'DROP TABLE IF EXISTS "{tabla_destino}"')
+
+            # 4️⃣ Obtener estructura de la tabla en SQL Server
+            columnas = self.app.sql_server_manager.obtener_estructura_tabla(tabla_origen)
+            columnas_nombres = [columna[0] for columna in columnas]
+
+            # 5️⃣ Mapear tipos de datos de SQL Server a SQLite
+            tipo_mapeo = {
+                "int": "INTEGER",
+                "bigint": "INTEGER",
+                "smallint": "INTEGER",
+                "tinyint": "INTEGER",
+                "bit": "INTEGER",
+                "nvarchar": "TEXT",
+                "varchar": "TEXT",
+                "text": "TEXT",
+                "datetime": "TEXT",
+                "date": "TEXT",
+                "float": "REAL",
+                "decimal": "REAL",
+                "numeric": "REAL",
+                "money": "REAL",
+                "uniqueidentifier": "TEXT"
+            }
+
+            columnas_definicion = [f'"{col}" {tipo_mapeo.get(tipo.lower(), "TEXT")}' for col, tipo in columnas]
+            sql_crear_tabla = f'CREATE TABLE "{tabla_destino}" ({", ".join(columnas_definicion)})'
+            self.cursor.execute(sql_crear_tabla)
+
+            # 6️⃣ Obtener datos desde SQL Server
+            datos = self.app.sql_server_manager.obtener_datos_tabla(tabla_origen)
+
+            # 7️⃣ Función para convertir valores problemáticos
+            def convertir_valor(valor):
+                if isinstance(valor, Decimal):
+                    return float(valor)
+                elif isinstance(valor, datetime):
+                    return valor.strftime("%Y-%m-%d %H:%M:%S")  # Formato estándar ISO
+                elif valor is None:
+                    return None  # Mantener NULL en SQLite
+                return valor
+
+            # Convertir datos de SQL Server a formatos adecuados para SQLite
+            datos_convertidos = [tuple(map(convertir_valor, fila)) for fila in datos]
+
+            # 8️⃣ Insertar datos en SQLite
+            if datos_convertidos:
+                placeholders = ", ".join(["?"] * len(columnas_nombres))
+                columnas_escapadas = [f'"{col}"' for col in columnas_nombres]
+                sql_insert = f'INSERT INTO "{tabla_destino}" ({", ".join(columnas_escapadas)}) VALUES ({placeholders})'
+                self.cursor.executemany(sql_insert, datos_convertidos)
+                self.conexion.commit()
+                #print(f"✅ Tabla '{tabla_destino}' importada correctamente con {len(datos_convertidos)} registros.")
+
+
+        except Exception as e:
+            self.conexion.rollback()
+            #print(f"❌ Error durante la sincronización de la tabla {tabla_origen}: {e}")
+
+    def load_empleados_sqlite(self):
+        """Carga los empleados desde SQLite en un DataFrame de pandas."""
+        query = """
+            SELECT id, name, department_id, work_email, department_name 
+            FROM empleados
+            WHERE department_name IS NOT NULL AND department_name != 'Administration'
+        """
+        
+        try:
+            self.cursor.execute(query)
+            empleados_data = self.cursor.fetchall()
+            empleados_df = pd.DataFrame(empleados_data, columns=[col[0] for col in self.cursor.description])
+            empleados_l = empleados_df['name'].tolist()  # Lista de nombres
+            return empleados_l, empleados_df
+        except Exception as e:
+            #print(f"Error al cargar empleados desde SQLite: {e}")
+            return [], pd.DataFrame()
+
+    def load_empresas_sqlite(self):
+        """Carga las empresas desde SQLite en un DataFrame de pandas."""
+        query = "SELECT id, name, vat FROM empresas"
+        
+        try:
+            self.cursor.execute(query)
+            empresas_data = self.cursor.fetchall()
+            empresas_df = pd.DataFrame(empresas_data, columns=[col[0] for col in self.cursor.description])
+            return empresas_df
+        except Exception as e:
+            #print(f"Error al cargar empresas desde SQLite: {e}")
+            return pd.DataFrame()
 
     def obtener_registros(self, user: str) -> List[Dict[str, Any]]:
         """
@@ -132,12 +241,12 @@ class DatabaseManager:
         Se contempla el campo 'descripcion' si se incluye en nuevos_valores.
         """
         if nuevos_valores is None:
-            print("Error: register_dic es None en update_register()")
+            #print("Error: register_dic es None en update_register()")
             return
 
         registro_id = nuevos_valores["id"]
 
-        print(nuevos_valores)
+        #print(nuevos_valores)
 
         if nuevos_valores or tiempo is not None:
             columnas_actualizar = []
@@ -154,12 +263,50 @@ class DatabaseManager:
             set_clause = ", ".join(f"{col} = ?" for col in columnas_actualizar)
             valores.append(registro_id)
             query = f"UPDATE {TABLA_REGISTROS} SET {set_clause} WHERE id = ?"
-            print(valores)
+            #print(valores)
             self.cursor.execute(query, valores)
         else:
             raise ValueError("Debe proporcionar nuevos valores, un tiempo a actualizar o ambos.")
     
         self.conexion.commit()
+
+
+    def obtener_registros_imputando(self, usuario):
+        """
+        Obtiene registros con state = 'imputando' para ser subidos a SQL Server por dicho usuario.
+        """        
+        query = f"SELECT id, {', '.join(self.columnas.keys())} FROM {TABLA_REGISTROS} WHERE state = ? AND user = ?"
+        self.cursor.execute(query, ('imputando', usuario))
+
+        registros = self.cursor.fetchall()
+        
+        # Incluir `id` en el diccionario resultante
+        columnas = ["id"] + list(self.columnas.keys())
+        return [dict(zip(columnas, row)) for row in registros]
+
+
+
+    def vincular_empresa(self, empresa_anterior: str, empresa_real: str, cif_real: str) -> None:
+        """
+        Reemplaza todos los registros donde la empresa sea 'empresa_anterior' con 'empresa_real'.
+        Obtiene el CIF de 'empresa_real' desde 'self.empresas_dic' y establece 'vinculada' en 1.
+
+        :param empresa_anterior: Nombre de la empresa a reemplazar.
+        :param empresa_real: Nombre de la empresa que sustituirá a la anterior.
+        :param cif_real: Nombre del cif de la empresa que sustituirá a la anterior.
+        """
+
+        # Actualizar registros que contengan la empresa anterior
+        query_actualizar = f"""
+            UPDATE {TABLA_REGISTROS}
+            SET empresa = ?, cif = ?, vinculada = 1
+            WHERE empresa = ?
+        """
+        self.cursor.execute(query_actualizar, (empresa_real, cif_real, empresa_anterior))
+        self.conexion.commit()
+
+        #print(f"Se han actualizado los registros de '{empresa_anterior}' a '{empresa_real}' con CIF '{cif_real}' y vinculada '1'.")
+
 
     def borrar_registro(self, registro_id: int) -> None:
         """
@@ -179,3 +326,8 @@ class DatabaseManager:
             self.cerrar_conexion()
         except Exception:
             pass
+
+
+
+
+

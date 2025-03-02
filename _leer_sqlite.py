@@ -1,11 +1,12 @@
 import sqlite3
 import pandas as pd
+from functions import DB_PATH
 
 # Conectar a la base de datos
-conexion = sqlite3.connect("data/treeview_data.db")
+conexion = sqlite3.connect(DB_PATH)
 
 # Cargar los datos en un DataFrame de pandas
-df = pd.read_sql_query("SELECT * FROM registros WHERE user = 'BEATRIZ MELENDEZ LEON'", conexion)
+df = pd.read_sql_query("SELECT * FROM empresas", conexion)
 
 # Ajustar configuración de Pandas para mostrar más contenido
 pd.set_option("display.max_columns", None)  # Mostrar todas las columnas

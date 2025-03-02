@@ -1,14 +1,32 @@
 from datetime import datetime
 from tkinter import ttk
+import os, gdown
 
-DB_PATH = r"data/treeview_data.db"
-ICON = "assets/icono.ico"
 
-CONFIG_FILE = "data/config.json"
+# Obtener el directorio del usuario en Windows
+USER_PATH = os.path.expanduser("~")  # Esto devuelve algo como C:\Users\TuUsuario
+
+FILES_PATH = os.path.join(USER_PATH, ".imputaciones")  # Crea la ruta completa
+
+DB_PATH = os.path.join(FILES_PATH, "register.db")
+
+
+ICON_URL = "https://drive.google.com/file/d/1GMNgEZ4f1rBfd2swr786wYF-6buv4o6H/view?usp=sharing"
+
+ICON = os.path.join(FILES_PATH, "icono.ico")
+
+CONFIG_FILE = os.path.join(FILES_PATH, "config.json")
 DEFAULT_CONFIG = {"session": {"user": "", "pass": ""}}
-EMPRESAS_CSV = "data/res_partner.csv"
-NUEVAS_EMPRESAS_CSV = "data/new_partners.csv"
-EMPLEADOS_CSV = "data/hr_employee.csv"
+# EMPRESAS_CSV = "data/res_partner.csv"
+# NUEVAS_EMPRESAS_CSV = "data/new_partners.csv"
+# EMPLEADOS_CSV = "data/hr_employee.csv"
+
+# Configuración de conexión
+# Configuración de conexión
+SQLSERVER_CONFIG = {"server": "srv-suasor",
+                    "database": "INTERNA",
+                    "username": "conexionsql",
+                    "password": "conexionSQL2025"}
 
 
 COLORES = {
@@ -55,6 +73,74 @@ COLUMNAS_DB = (
         "user",
         "departamento",
     )
+
+
+def verificar_o_crear_carpeta_archivos():
+    """Verifica si la carpeta .imputaciones existe en el path del usuario de Windows. Si no existe, la crea."""
+    
+    # Verificar si la carpeta existe
+    if not os.path.exists(FILES_PATH):
+        os.makedirs(FILES_PATH)  # Crear la carpeta si no existe
+
+    #si no tenemos el icono descargado, lo descargamos
+    if not os.path.exists(ICON):
+        # Extraer el ID del archivo de la URL
+        file_id = ICON_URL.split("/d/")[1].split("/")[0]
+        # Construir la URL directa de descarga
+        download_url = f"https://drive.google.com/uc?id={file_id}"
+        # Nombre del archivo de salida
+        output_file = os.path.join(FILES_PATH, "icono.ico")
+        # Descargar el archivo
+        gdown.download(download_url, output_file, quiet=False)
+
+
+def procesar_nombre(name):
+    """Procesa un string eliminando 'de' y 'los', y eliminando las dos últimas palabras si quedan tres o más.
+    Si tras eliminar 'de' y 'los' quedan menos de tres palabras, devuelve el nombre original."""
+    # Eliminar palabras que contienen "de" o "los" (ignorando mayúsculas/minúsculas)
+    palabras = [word for word in name.split() if word.lower() not in ["de", "los"]]
+    
+    # Si quedan menos de tres palabras después del filtro, devolver el nombre original
+    if len(palabras) < 3:
+        return name
+    
+    # Si quedan 3 o más palabras, quitar las dos últimas
+    palabras = palabras[:-2]
+    
+    # Unir el resultado en una cadena
+    return " ".join(palabras)
+
+
+def seconds_to_string(time, include_seconds=True):
+    time = int(time)
+    hours = time // 3600
+    minutes = (time % 3600) // 60
+    seconds = time % 60
+    
+    if include_seconds:
+        return f"{hours:02}:{minutes:02}:{seconds:02}"
+    
+    if hours > 0:
+        if hours == 1:
+            return f"1 hora {minutes} min."
+        return f"{hours} horas {minutes} min."
+    return f"{minutes} min."
+
+
+@staticmethod
+def formatear_fecha(fecha):
+    """
+    Formatea una fecha del formato 'YYYY-MM-DD HH:MM' a '1 de enero' o similar.
+    """
+    fecha_dt = datetime.strptime(fecha, "%Y-%m-%d %H:%M")
+    meses = [
+        "enero", "febrero", "marzo", "abril", "mayo", "junio",
+        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+    ]
+    return f"{fecha_dt.day} de {meses[fecha_dt.month - 1]}"
+
+def return_fecha_actual():
+    return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
 def configure_styles():
@@ -120,59 +206,3 @@ def configure_styles():
     style.configure("Reanudar.TButton", font=("Segoe UI", 14, "bold"), foreground=COLORES["blanco"], background=COLORES["verde_claro"], 
                     padding=5, relief="solid", borderwidth=5)
     style.map("Reanudar.TButton", background=[("active", COLORES["verde_oscuro"])])  # Verde más oscuro al pasar el mouse
-
-
-
-
-
-
-
-
-
-def procesar_nombre(name):
-    """Procesa un string eliminando 'de' y 'los', y eliminando las dos últimas palabras si quedan tres o más.
-    Si tras eliminar 'de' y 'los' quedan menos de tres palabras, devuelve el nombre original."""
-    # Eliminar palabras que contienen "de" o "los" (ignorando mayúsculas/minúsculas)
-    palabras = [word for word in name.split() if word.lower() not in ["de", "los"]]
-    
-    # Si quedan menos de tres palabras después del filtro, devolver el nombre original
-    if len(palabras) < 3:
-        return name
-    
-    # Si quedan 3 o más palabras, quitar las dos últimas
-    palabras = palabras[:-2]
-    
-    # Unir el resultado en una cadena
-    return " ".join(palabras)
-
-
-def seconds_to_string(time, include_seconds=True):
-    time = int(time)
-    hours = time // 3600
-    minutes = (time % 3600) // 60
-    seconds = time % 60
-    
-    if include_seconds:
-        return f"{hours:02}:{minutes:02}:{seconds:02}"
-    
-    if hours > 0:
-        if hours == 1:
-            return f"1 hora {minutes} min."
-        return f"{hours} horas {minutes} min."
-    return f"{minutes} min."
-
-
-@staticmethod
-def formatear_fecha(fecha):
-    """
-    Formatea una fecha del formato 'YYYY-MM-DD HH:MM' a '1 de enero' o similar.
-    """
-    fecha_dt = datetime.strptime(fecha, "%Y-%m-%d %H:%M")
-    meses = [
-        "enero", "febrero", "marzo", "abril", "mayo", "junio",
-        "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
-    ]
-    return f"{fecha_dt.day} de {meses[fecha_dt.month - 1]}"
-
-def return_fecha_actual():
-    return datetime.now().strftime("%Y-%m-%d %H:%M")
