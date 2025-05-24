@@ -1,5 +1,5 @@
-('C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL\\SQL Server\\Imputacion '
- 'Horas\\build\\main\\PYZ-00.pyz',
+('C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL GLOBAL\\SQL Server\\App '
+ 'Imputacion Horas\\build\\main\\PYZ-00.pyz',
  [('PIL',
    'C:\\venv\\imputacion_horas\\Lib\\site-packages\\PIL\\__init__.py',
    'PYMODULE'),
@@ -980,8 +980,8 @@
   ('fractions', 'C:\\Program Files\\Python311\\Lib\\fractions.py', 'PYMODULE'),
   ('ftplib', 'C:\\Program Files\\Python311\\Lib\\ftplib.py', 'PYMODULE'),
   ('functions',
-   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL\\SQL Server\\Imputacion '
-   'Horas\\functions.py',
+   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL GLOBAL\\SQL Server\\App '
+   'Imputacion Horas\\functions.py',
    'PYMODULE'),
   ('gdown',
    'C:\\venv\\imputacion_horas\\Lib\\site-packages\\gdown\\__init__.py',
@@ -2994,8 +2994,8 @@
   ('quopri', 'C:\\Program Files\\Python311\\Lib\\quopri.py', 'PYMODULE'),
   ('random', 'C:\\Program Files\\Python311\\Lib\\random.py', 'PYMODULE'),
   ('register',
-   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL\\SQL Server\\Imputacion '
-   'Horas\\register.py',
+   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL GLOBAL\\SQL Server\\App '
+   'Imputacion Horas\\register.py',
    'PYMODULE'),
   ('requests',
    'C:\\venv\\imputacion_horas\\Lib\\site-packages\\requests\\__init__.py',
@@ -3053,14 +3053,14 @@
    'PYMODULE'),
   ('runpy', 'C:\\Program Files\\Python311\\Lib\\runpy.py', 'PYMODULE'),
   ('search_frame',
-   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL\\SQL Server\\Imputacion '
-   'Horas\\search_frame.py',
+   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL GLOBAL\\SQL Server\\App '
+   'Imputacion Horas\\search_frame.py',
    'PYMODULE'),
   ('secrets', 'C:\\Program Files\\Python311\\Lib\\secrets.py', 'PYMODULE'),
   ('selectors', 'C:\\Program Files\\Python311\\Lib\\selectors.py', 'PYMODULE'),
   ('session_manager',
-   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL\\SQL Server\\Imputacion '
-   'Horas\\session_manager.py',
+   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL GLOBAL\\SQL Server\\App '
+   'Imputacion Horas\\session_manager.py',
    'PYMODULE'),
   ('setuptools',
    'C:\\venv\\imputacion_horas\\Lib\\site-packages\\setuptools\\__init__.py',
@@ -3554,9 +3554,13 @@
   ('soupsieve.util',
    'C:\\venv\\imputacion_horas\\Lib\\site-packages\\soupsieve\\util.py',
    'PYMODULE'),
+  ('splash_screen',
+   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL GLOBAL\\SQL Server\\App '
+   'Imputacion Horas\\splash_screen.py',
+   'PYMODULE'),
   ('sql_server',
-   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL\\SQL Server\\Imputacion '
-   'Horas\\sql_server.py',
+   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL GLOBAL\\SQL Server\\App '
+   'Imputacion Horas\\sql_server.py',
    'PYMODULE'),
   ('sqlalchemy',
    'C:\\venv\\imputacion_horas\\Lib\\site-packages\\sqlalchemy\\__init__.py',
@@ -4132,8 +4136,8 @@
    'C:\\venv\\imputacion_horas\\Lib\\site-packages\\sqlalchemy\\util\\typing.py',
    'PYMODULE'),
   ('sqlite',
-   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL\\SQL Server\\Imputacion '
-   'Horas\\sqlite.py',
+   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL GLOBAL\\SQL Server\\App '
+   'Imputacion Horas\\sqlite.py',
    'PYMODULE'),
   ('sqlite3',
    'C:\\Program Files\\Python311\\Lib\\sqlite3\\__init__.py',
@@ -4157,8 +4161,8 @@
    'PYMODULE'),
   ('sysconfig', 'C:\\Program Files\\Python311\\Lib\\sysconfig.py', 'PYMODULE'),
   ('systray_manager',
-   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL\\SQL Server\\Imputacion '
-   'Horas\\systray_manager.py',
+   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL GLOBAL\\SQL Server\\App '
+   'Imputacion Horas\\systray_manager.py',
    'PYMODULE'),
   ('tarfile', 'C:\\Program Files\\Python311\\Lib\\tarfile.py', 'PYMODULE'),
   ('tempfile', 'C:\\Program Files\\Python311\\Lib\\tempfile.py', 'PYMODULE'),
@@ -4251,8 +4255,8 @@
    'C:\\venv\\imputacion_horas\\Lib\\site-packages\\traitlets\\utils\\warnings.py',
    'PYMODULE'),
   ('treeview',
-   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL\\SQL Server\\Imputacion '
-   'Horas\\treeview.py',
+   'C:\\Users\\NET4\\OneDrive - ETL GLOBAL\\ETL GLOBAL\\SQL Server\\App '
+   'Imputacion Horas\\treeview.py',
    'PYMODULE'),
   ('tty', 'C:\\Program Files\\Python311\\Lib\\tty.py', 'PYMODULE'),
   ('typing', 'C:\\Program Files\\Python311\\Lib\\typing.py', 'PYMODULE'),

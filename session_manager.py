@@ -12,13 +12,27 @@ class SessionManager:
         self.app = app
         self.empresa_no_creada = '-----❌empresa no creada en SUASOR❌-----'
 
-        self.empleados_l, self.empleados_df = self.app.db_manager.load_empleados_sqlite()
-        print ("self.empleados_df", self.empleados_df)
+        #quan entrem carrega les taules de empleados y empresas del sqlserver al sqlite
+        self.app.db_manager.sincronizar_empleados()
+        self.app.db_manager.sincronizar_empresas()
+
+        #extraiem la informacio del sqlite
+        self.empleados_dict, self.empleados_df = self.app.db_manager.load_empleados_sqlite()
         # Verificar y cargar configuración
         self.config = self.load_config()
-        self.user = self.config["session"]["user"]
-        resultado = self.empleados_df.loc[self.empleados_df["name"] == self.user, "department_name"]
-        self.department = resultado.iloc[0] if not resultado.empty else None  # Si hay resultado, devuelve el primero
+        self.user_id = self.config["session"]["id"]
+
+        # Buscamos la fila cuyo id coincida con self.user_id
+        mask = self.empleados_df["id"] == self.user_id
+        if mask.any():
+            # Tomamos la primera fila coincidente
+            fila = self.empleados_df.loc[mask, ["name","department_name"]].iloc[0]
+            self.user = fila['name']
+            self.department = fila["department_name"]
+        else:
+            # Si no hay coincidencias, vaciamos self.user y ponemos None en department
+            self.user = ""
+            self.department = None
 
 
     @property
@@ -32,7 +46,7 @@ class SessionManager:
         empresas_df = self.app.db_manager.load_empresas_sqlite()
         empresas_dic = {row['name'].upper(): row['vat'].upper() for _, row in empresas_df.iterrows()}
 
-        # Diccionario base con empresas existentes
+        # Diccionario base ordenado con empresas existentes
         combo_empresas_dic = OrderedDict()
 
         # Si create=True, se añade la opción "empresa no creada"
@@ -55,18 +69,45 @@ class SessionManager:
         
        
     def load_config(self):
-        """Carga el archivo de configuración o lo crea si no existe."""
+        """Carga el archivo de configuración o lo crea si no existe.
+        Si detecta formato antiguo, crea uno nuevo predeterminado."""
         try:
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, "r") as file:
-                    return json.load(file)
+                    config_data = json.load(file)
+                    
+                # Verificar si es formato antiguo (tiene "user" en lugar de "id")
+                if "session" in config_data and "user" in config_data["session"] and "id" not in config_data["session"]:
+                    from tkinter import messagebox
+                    messagebox.showinfo("Configuración Actualizada", 
+                                    "Se ha detectado una configuración de versión anterior.\n\n"
+                                    "Se creará una nueva configuración compatible.\n"
+                                    "Deberá seleccionar su usuario nuevamente.")
+                    return self._crear_config_predeterminado()
+                
+                # Verificar si falta el campo "id" en formato nuevo
+                elif "session" in config_data and "id" not in config_data["session"]:
+                    from tkinter import messagebox
+                    messagebox.showwarning("Configuración Incompleta", 
+                                        "La configuración está incompleta.\n\n"
+                                        "Se creará una nueva configuración.\n"
+                                        "Deberá seleccionar su usuario nuevamente.")
+                    return self._crear_config_predeterminado()
+                
+                # Si está en formato correcto, devolverlo
+                return config_data
             else:
                 return self._crear_config_predeterminado()
+                
         except json.JSONDecodeError:
-            #print("Error: El archivo de configuración está corrupto. Se restaurará uno nuevo.")
+            from tkinter import messagebox
+            messagebox.showerror("Error de Configuración", 
+                                "El archivo de configuración está corrupto.\n\n"
+                                "Se creará una nueva configuración predeterminada.")
             return self._crear_config_predeterminado()
         except Exception as e:
-            #print(f"Error al cargar la configuración: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Error al cargar la configuración:\n{e}")
             return DEFAULT_CONFIG
 
     def _crear_config_predeterminado(self):
@@ -77,21 +118,23 @@ class SessionManager:
                 json.dump(DEFAULT_CONFIG, file, indent=4)
             return DEFAULT_CONFIG
         except Exception as e:
-            #print(f"Error al crear el archivo de configuración: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Error al crear el archivo de configuración:\n{e}")
             return DEFAULT_CONFIG
 
 
-    def write_config(self, user):
+    def write_config(self, user_id):
         """Guarda el usuario en la configuración."""
-        self.config["session"]["user"] = user
+        self.config["session"]["id"] = user_id
         with open(CONFIG_FILE, "w") as file:
             json.dump(self.config, file, indent=4)
 
-    def selected_user(self, user):
+    def selected_user(self, user_id, name):
         """Selecciona un usuario y lo guarda en la configuración."""
-        self.write_config(user)
-        self.user = self.config["session"]["user"]
-        resultado = self.empleados_df.loc[self.empleados_df["name"] == self.user, "department_name"]
+        self.write_config(user_id)
+        self.user_id = self.config["session"]["id"]
+        self.user = name
+        resultado = self.empleados_df.loc[self.empleados_df["id"] == self.user_id, "department_name"]
         self.department = resultado.iloc[0] if not resultado.empty else None  # Si hay resultado, devuelve el primero
 
 

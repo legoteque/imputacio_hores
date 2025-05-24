@@ -1,5 +1,6 @@
 from datetime import datetime
 from tkinter import ttk
+from tkinter import messagebox
 import os, gdown
 
 
@@ -16,18 +17,58 @@ ICON_URL = "https://drive.google.com/file/d/1GMNgEZ4f1rBfd2swr786wYF-6buv4o6H/vi
 ICON = os.path.join(FILES_PATH, "icono.ico")
 
 CONFIG_FILE = os.path.join(FILES_PATH, "config.json")
-DEFAULT_CONFIG = {"session": {"user": "", "pass": ""}}
-# EMPRESAS_CSV = "data/res_partner.csv"
-# NUEVAS_EMPRESAS_CSV = "data/new_partners.csv"
-# EMPLEADOS_CSV = "data/hr_employee.csv"
+DEFAULT_CONFIG = {"session": {"id": ""}, "version": "1.1"}
 
 # Configuración de conexión
-# Configuración de conexión
-SQLSERVER_CONFIG = {"server": "srv-suasor",
-                    "database": "INTERNA",
-                    "username": "conexionsql",
-                    "password": "conexionSQL2025"}
+SQLSERVER_CONFIG = {
+    "servers": [
+        "srv-suasor",      # Servidor primario (dominio)
+        "192.168.55.7"     # Servidor de fallback (IP)
+    ],
+    "port": "1433",
+    "database": "INTERNA",
+    "username": "conexionsql",
+    "password": "conexionSQL2025",
+    "clientes_tbl": "DimClientes",
+    "empleados_tbl": "DimEmpleados",
+    "imputaciones_tbl": "Fact_Imputado",
+    "connection_timeout": 8,  # Timeout más corto para fallback rápido
+    "trust_certificate": "yes",
+    "encrypt": "no"
+}
 
+EMPLEADOS_COLS = {
+    "id": "INTEGER PRIMARY KEY",
+    "nombre": "TEXT NOT NULL",
+    "apellido_1": "TEXT",
+    "apellido_2": "TEXT",
+    "department_name": "TEXT",
+    "activo": "INTEGER DEFAULT 1"
+}
+
+CLIENTES_COLS = {
+    "vat": "TEXT PRIMARY KEY",
+    "name": "TEXT NOT NULL", 
+    "origen": "TEXT",
+    "baja": "INTEGER DEFAULT 0"
+}
+
+REGISTRO_COLS = {
+    "tiempo": "TEXT",
+    "empresa": "TEXT",
+    "concepto": "TEXT",
+    "fecha_creacion": "DATETIME",
+    "fecha_imputacion": "DATETIME",
+    "state": "TEXT",
+    "user": "TEXT",
+    "departamento": "TEXT",
+    "descripcion": "TEXT",
+    "vinculada": "INTEGER",
+    "cif": "TEXT"
+}
+
+# IMPUTADO_COLS = [id, tiempo, empresa, concepto, fecha_creacion, fecha_imputacion, 
+#                  usuario, departamento, descripcion, cif]
 
 COLORES = {
     "blanco": "#ffffff",
@@ -206,3 +247,55 @@ def configure_styles():
     style.configure("Reanudar.TButton", font=("Segoe UI", 14, "bold"), foreground=COLORES["blanco"], background=COLORES["verde_claro"], 
                     padding=5, relief="solid", borderwidth=5)
     style.map("Reanudar.TButton", background=[("active", COLORES["verde_oscuro"])])  # Verde más oscuro al pasar el mouse
+
+
+def test_conexion_detallada(self):
+    """Función de debug para probar conexión paso a paso."""
+    
+    try:
+        # 1. Probar con puerto explícito
+        connection_string_1 = (
+            f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+            f"SERVER={SQLSERVER_CONFIG['server']};"
+            f"DATABASE={SQLSERVER_CONFIG['database']};"
+            f"UID={SQLSERVER_CONFIG['username']};"
+            f"PWD={SQLSERVER_CONFIG['password']};"
+            f"TrustServerCertificate=yes;"  # Evita errores de certificado
+            f"Encrypt=no"  # Desactiva encriptación si da problemas
+        )
+        
+        messagebox.showinfo("Debug", f"Intentando conexión 1:\n{SQLSERVER_CONFIG['server']}")
+        connection = pyodbc.connect(connection_string_1, timeout=10)
+        messagebox.showinfo("Éxito", "¡Conexión exitosa con puerto explícito!")
+        connection.close()
+        return True
+        
+    except Exception as e1:
+        try:
+            # 2. Probar con IP en lugar de nombre
+            connection_string_2 = (
+                f"DRIVER={{ODBC Driver 17 for SQL Server}};"
+                f"SERVER=192.168.55.7,1433;"  # Reemplazar con IP real
+                f"DATABASE={SQLSERVER_CONFIG['database']};"
+                f"UID={SQLSERVER_CONFIG['username']};"
+                f"PWD={SQLSERVER_CONFIG['password']};"
+                f"TrustServerCertificate=yes;"
+                f"Encrypt=no"
+            )
+            
+            messagebox.showinfo("Debug", "Intentando con IP...")
+            # Aquí deberías poner la IP real del servidor
+            # connection = pyodbc.connect(connection_string_2, timeout=10)
+            
+        except Exception as e2:
+            # 3. Mostrar información detallada del error
+            error_msg = (
+                f"Error 1 (puerto explícito):\n{str(e1)[:200]}...\n\n"
+                f"Error 2 (IP):\n{str(e2)[:200]}...\n\n"
+                f"Configuración actual:\n"
+                f"Servidor: {SQLSERVER_CONFIG['server']}\n"
+                f"BD: {SQLSERVER_CONFIG['database']}\n"
+                f"Usuario: {SQLSERVER_CONFIG['username']}"
+            )
+            messagebox.showerror("Diagnóstico de conexión", error_msg)
+            return False

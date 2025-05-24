@@ -35,5 +35,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=[r'C:\Users\NET4\OneDrive - ETL GLOBAL\ETL\SQL Server\Imputacion Horas\temp\icono.ico']
+    icon=[r'C:\Users\NET4\OneDrive - ETL GLOBAL\ETL GLOBAL\SQL Server\App Imputacion Horas\icono.ico']
 )

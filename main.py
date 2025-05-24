@@ -1,4 +1,4 @@
-import os, sys, ctypes
+import os, sys, ctypes, time
 import tkinter as tk
 from tkinter import ttk, simpledialog, messagebox
 from sqlite import DatabaseManager
@@ -6,9 +6,10 @@ from sql_server import SQLServerManager
 from session_manager import SessionManager
 from systray_manager import SystrayManager
 from search_frame import BusquedaFrame
+from splash_screen import SplashScreen
 from functions import procesar_nombre, seconds_to_string, configure_styles
 from functions import return_fecha_actual, verificar_o_crear_carpeta_archivos
-from functions import COLORES, ICON, DB_PATH, SQLSERVER_CONFIG
+from functions import COLORES, ICON, DB_PATH
 from register import TasksAdmin
 
 
@@ -32,8 +33,11 @@ import warnings
 warnings.simplefilter("ignore", category=UserWarning)
 
 
+
+
+
 class ImputacionesApp:
-    def __init__(self, root):
+    def __init__(self, root, splash=None):
         self.root = root
         self._running = False
         self._paused = False
@@ -42,17 +46,31 @@ class ImputacionesApp:
         self.empresas_dic = {}
         self.empresas_suasor = {}
 
-        #verifica o crea si existe la carpeta archivos:
+        # Verifica o crea la carpeta "archivos"
         verificar_o_crear_carpeta_archivos()
 
-        # Inicialización de widgets y managers
+        # Configuración inicial de la ventana principal y estilos
         self.configure_root()
         configure_styles()
 
-        #instanciamos el objeto sql_server_manager para abrir una conexion al sqlserver
-        self.sql_server_manager = SQLServerManager(self.root, SQLSERVER_CONFIG)
+ # --- Inicialización de instancias clave con actualización de la splash ---
+        if splash:
+            splash.update_message("Iniciando Conexión...")
+        self.sql_server_manager = SQLServerManager(self.root)
+
+        if splash:
+            splash.update_progress(25)
+            splash.update_message("Cargando datos desde SUASOR...")
         self.db_manager = DatabaseManager(self, DB_PATH)
+
+        if splash:
+            splash.update_progress(50)
+            splash.update_message("Inicializando sesión...")
         self.session = SessionManager(self)
+
+        if splash:
+            splash.update_progress(75)
+            splash.update_message("Terminando configuración...")
         self.systray = SystrayManager(self, ICON, "SIN USUARIO")
 
         # Secciones de la aplicación
@@ -62,12 +80,21 @@ class ImputacionesApp:
         self.tasks_admin = TasksAdmin(self)
         
         self.systray.initialized.wait()  # Esperar a que el systray esté listo
+
+
+        if splash:
+            splash.update_progress(100)
+            splash.update_message("¡Listo!")
+            time.sleep(0.5)  # Pausa breve para mostrar el 100%
+            splash.destroy()
+
         
         if self.session.logged_in:
             self.logged_in()
         else:
             self.set_logout_state()
             
+
 
 #--------------------------------------------------------------------------------------------------------LOGICAL
 
@@ -486,7 +513,7 @@ class ImputacionesApp:
         # Agregar widgets al popup        
         tk.Label(popup, text="Usuario:", font=("Segoe UI", 11, "bold"), bg=COLORES["negro"], fg=COLORES["blanco"]).pack(pady=10)
         
-        user_combobox = ttk.Combobox(popup, values=self.session.empleados_l, state="readonly")
+        user_combobox = ttk.Combobox(popup, values=list(self.session.empleados_dict.keys()), state="readonly")
         user_combobox.set("Selecciona un usuario")
         user_combobox.pack(pady=5, padx=20, fill="x")
     
@@ -494,7 +521,7 @@ class ImputacionesApp:
             """Se ejecuta automáticamente al seleccionar un usuario."""
             selected_user = user_combobox.get()
             if selected_user and selected_user != "Selecciona un usuario":
-                self.session.selected_user(selected_user)
+                self.session.selected_user(self.session.empleados_dict[selected_user], selected_user)
                 popup.destroy()
                 self.logged_in()
     
@@ -588,7 +615,11 @@ class ImputacionesApp:
         # Widgets dentro de toggle_frame
         self.configurar_label(widget= "selected_empresa_label", mostrar=True, texto="No seleccionada")
         self.configurar_label(widget= "selected_cif_label", mostrar=True, texto="-")
-        
+
+        # 🔹 AGREGAR: Deshabilitar campos concepto y descripción
+        self.widgets["selected_concepto_entry"].config(state="disabled")
+        self.widgets["selected_descripcion_entry"].config(state="disabled")
+            
         # Reinicia contador
         self.configurar_label(widget="timer_label", mostrar=False)
         self.configurar_button(button="pause_button", mostrar=False)  # Oculta el botón de pausa
@@ -622,8 +653,13 @@ class ImputacionesApp:
             self.tasks_admin.treeview_manager.color_fila(color="yellow", id_fila=self.register_dic["id"]) #amarillo el id seleccionado
         
         
+        # 🔹 MODIFICAR: Habilitar campos y configurar valores
+        self.widgets["selected_concepto_entry"].config(state="normal")
+        self.widgets["selected_descripcion_entry"].config(state="normal")
         self.configurar_label(widget="selected_concepto_entry", texto=self.register_dic["concepto"])
         self.configurar_label(widget="selected_descripcion_entry", texto=self.register_dic["descripcion"])
+
+
 
         self.configurar_label(widget="timer_label", mostrar=True, texto=text, estilo="PTimer.TLabel")
             
@@ -683,6 +719,9 @@ class ImputacionesApp:
         self.configurar_label(widget="selected_cif_label", mostrar=True, texto="-")
         self.configurar_label(widget="selected_concepto_entry", mostrar=True, texto="")
         self.configurar_label(widget="selected_descripcion_entry", mostrar=True, texto="")
+        # 🔹 AGREGAR: Deshabilitar campos después de limpiarlos
+        self.widgets["selected_concepto_entry"].config(state="disabled")
+        self.widgets["selected_descripcion_entry"].config(state="disabled")
         
         self.tasks_admin.treeview_manager.color_fila(color="white")
         self.tasks_admin.treeview_manager.habilitar_interaccion_treeview()
@@ -695,9 +734,21 @@ class ImputacionesApp:
             "start_stop": {"text": "Iniciar", "visible": False}
         })
 
+
+
 def main():
+    # Crear la ventana principal y ocultarla inicialmente
     root = tk.Tk()
-    app = ImputacionesApp(root)
+    root.withdraw()  # Oculta la ventana principal mientras se muestra la splash
+
+    # Crear y mostrar la pantalla splash
+    splash = SplashScreen(root)
+
+    # Inicializar la aplicación, pasando la splash para que se actualice durante el init
+    app = ImputacionesApp(root, splash)
+
+    # Una vez terminada la inicialización, mostrar la ventana principal
+    root.deiconify()
     root.mainloop()
 
 if __name__ == "__main__":

@@ -292,22 +292,49 @@ class TasksAdmin:
             
             # Validar que la fecha introducida es correcta
             try:
-                datetime.strptime(nueva_fecha, "%Y-%m-%d %H:%M")
+                fecha_introducida = datetime.strptime(nueva_fecha, "%Y-%m-%d %H:%M")
             except ValueError:
                 messagebox.showerror("Fecha inválida", "La fecha introducida no es válida. Por favor, revise los valores de día, mes y año.")
                 return
-
+            
+            # Obtener fecha actual
+            fecha_actual = datetime.now()
+            
+            # Validar que la fecha no es posterior al día de hoy
+            if fecha_introducida.date() > fecha_actual.date():
+                messagebox.showerror("Fecha futura", "No se pueden introducir fechas posteriores al día de hoy.")
+                return
+            
+            # Calcular el mes anterior
+            if fecha_actual.month == 1:
+                mes_anterior = 12
+                anyo_mes_anterior = fecha_actual.year - 1
+            else:
+                mes_anterior = fecha_actual.month - 1
+                anyo_mes_anterior = fecha_actual.year
+            
+            # Validar que la fecha está dentro del rango permitido (mes actual o anterior)
+            fecha_limite_inferior = datetime(anyo_mes_anterior, mes_anterior, 1).date()
+            
+            if fecha_introducida.date() < fecha_limite_inferior:
+                messagebox.showerror(
+                    "Fecha fuera de rango", 
+                    f"Solo se pueden introducir fechas del mes actual ({fecha_actual.strftime('%B %Y')}) "
+                    f"o del mes anterior ({datetime(anyo_mes_anterior, mes_anterior, 1).strftime('%B %Y')})."
+                )
+                return
+            
             # Calcular el nuevo tiempo en segundos
             horas_val = int(spinbox_horas2.get())
             minutos_val = int(minutos_var.get())
             nuevo_tiempo = horas_val * 3600 + minutos_val * 60
-
+            
             # Formatear el tiempo para mostrarlo en el Treeview
             tiempo_formateado = seconds_to_string(nuevo_tiempo, include_seconds=False)
-
+            
             # Obtener la empresa (aunque sea no editable, se necesita para el treeview)
             empresa = entry_empresa.get()
-
+            
             # Formatear la fecha para el Treeview (sin la hora si solo se muestra la fecha)
             fecha_formateada = formatear_fecha(nueva_fecha)
             
@@ -320,7 +347,7 @@ class TasksAdmin:
                 "tiempo": nuevo_tiempo
             }
             self.app.db_manager.actualizar_registro(nuevos_valores=nuevos_valores)
-
+            
             # Actualiza el Treeview con los valores recién ingresados
             self.treeview_manager.actualizar_fila(
                 registro_id, 
@@ -331,7 +358,7 @@ class TasksAdmin:
                 nuevo_tiempo,  # Tiempo en segundos (si es necesario)
                 nueva_fecha  # Fecha completa con hora original
             )
-
+            
             cerrar_popup()
 
         btn_frame = tk.Frame(popup, bg="white")

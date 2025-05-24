@@ -3,21 +3,7 @@ import pandas as pd
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Any, List, Optional
-
-# Definición centralizada de las columnas y sus tipos, incluyendo 'descripcion'
-COLUMNAS_DB: Dict[str, str] = {
-    "tiempo": "TEXT",
-    "empresa": "TEXT",
-    "concepto": "TEXT",
-    "fecha_creacion": "DATETIME",
-    "fecha_imputacion": "DATETIME",
-    "state": "TEXT",
-    "user": "TEXT",
-    "departamento": "TEXT",
-    "descripcion": "TEXT",
-    "vinculada": "INTEGER",
-    "cif": "TEXT"
-}
+from functions import EMPLEADOS_COLS, CLIENTES_COLS, REGISTRO_COLS
 
 TABLA_REGISTROS = "registros"
 
@@ -25,12 +11,11 @@ class DatabaseManager:
     def __init__(self, app, db_path: str) -> None:
         self.app = app
         self.db_path = db_path
-        self.columnas: Dict[str, str] = COLUMNAS_DB.copy()
+        self.columnas = REGISTRO_COLS.copy()
         self.conexion = sqlite3.connect(db_path)
         self.cursor = self.conexion.cursor()
         self._crear_tabla()
-        self.sincronizar_tabla("empleados")
-        self.sincronizar_tabla("empresas")
+
 
     def _crear_tabla(self) -> None:
         """
@@ -47,100 +32,251 @@ class DatabaseManager:
         self.conexion.commit()
 
 
-    def sincronizar_tabla(self, tabla_origen, tabla_destino=None):
-        """Sincroniza todos los datos de una tabla de SQL Server a SQLite."""
-        if tabla_destino is None:
-            tabla_destino = tabla_origen
 
-        # 1️⃣ Verificar conexión a SQL Server
+    def sincronizar_empleados(self):
+        """
+        Versión mejorada con mejor manejo de errores y rollback.
+        """
         if not self.app.sql_server_manager.comprobar_conexion():
-            return
-
+            return False
+        
+        # Iniciar transacción
         try:
-            # 2️⃣ Iniciar transacción en SQLite
             self.cursor.execute("BEGIN TRANSACTION")
             
-            # 3️⃣ Eliminar tabla en SQLite si existe
-            self.cursor.execute(f'DROP TABLE IF EXISTS "{tabla_destino}"')
-
-            # 4️⃣ Obtener estructura de la tabla en SQL Server
-            columnas = self.app.sql_server_manager.obtener_estructura_tabla(tabla_origen)
-            columnas_nombres = [columna[0] for columna in columnas]
-
-            # 5️⃣ Mapear tipos de datos de SQL Server a SQLite
-            tipo_mapeo = {
-                "int": "INTEGER",
-                "bigint": "INTEGER",
-                "smallint": "INTEGER",
-                "tinyint": "INTEGER",
-                "bit": "INTEGER",
-                "nvarchar": "TEXT",
-                "varchar": "TEXT",
-                "text": "TEXT",
-                "datetime": "TEXT",
-                "date": "TEXT",
-                "float": "REAL",
-                "decimal": "REAL",
-                "numeric": "REAL",
-                "money": "REAL",
-                "uniqueidentifier": "TEXT"
-            }
-
-            columnas_definicion = [f'"{col}" {tipo_mapeo.get(tipo.lower(), "TEXT")}' for col, tipo in columnas]
-            sql_crear_tabla = f'CREATE TABLE "{tabla_destino}" ({", ".join(columnas_definicion)})'
-            self.cursor.execute(sql_crear_tabla)
-
-            # 6️⃣ Obtener datos desde SQL Server
-            datos = self.app.sql_server_manager.obtener_datos_tabla(tabla_origen)
-
-            # 7️⃣ Función para convertir valores problemáticos
-            def convertir_valor(valor):
-                if isinstance(valor, Decimal):
-                    return float(valor)
-                elif isinstance(valor, datetime):
-                    return valor.strftime("%Y-%m-%d %H:%M:%S")  # Formato estándar ISO
-                elif valor is None:
-                    return None  # Mantener NULL en SQLite
-                return valor
-
-            # Convertir datos de SQL Server a formatos adecuados para SQLite
-            datos_convertidos = [tuple(map(convertir_valor, fila)) for fila in datos]
-
-            # 8️⃣ Insertar datos en SQLite
-            if datos_convertidos:
-                placeholders = ", ".join(["?"] * len(columnas_nombres))
-                columnas_escapadas = [f'"{col}"' for col in columnas_nombres]
-                sql_insert = f'INSERT INTO "{tabla_destino}" ({", ".join(columnas_escapadas)}) VALUES ({placeholders})'
-                self.cursor.executemany(sql_insert, datos_convertidos)
-                self.conexion.commit()
-                #print(f"✅ Tabla '{tabla_destino}' importada correctamente con {len(datos_convertidos)} registros.")
-
-
+            # Obtener DataFrame desde SQL Server
+            df_empleados = self.app.sql_server_manager.obtener_empleados_dataframe()
+            
+            if df_empleados is None:
+                self.conexion.rollback()
+                from tkinter import messagebox
+                messagebox.showerror("Error de Consulta", 
+                                "No se pudo ejecutar la consulta de empleados en SQL Server")
+                return False
+            
+            if df_empleados.empty:
+                self.conexion.rollback()
+                from tkinter import messagebox
+                messagebox.showwarning("Sin Datos", 
+                                    "No se encontraron empleados activos en la base de datos.")
+                return False
+            
+            # Validar estructura antes de guardar
+            columnas_esperadas = set(EMPLEADOS_COLS.keys())
+            columnas_recibidas = set(df_empleados.columns)
+            
+            if not columnas_esperadas.issubset(columnas_recibidas):
+                columnas_faltantes = columnas_esperadas - columnas_recibidas
+                self.conexion.rollback()
+                from tkinter import messagebox
+                messagebox.showerror("Error de Estructura", 
+                                f"Faltan columnas esperadas: {list(columnas_faltantes)}")
+                return False
+            
+            # Guardar en SQLite (reemplaza tabla completa)
+            df_empleados.to_sql(
+                name="empleados",
+                con=self.conexion,
+                if_exists='replace',
+                index=False,
+                method='multi'
+            )
+            
+            # Confirmar transacción
+            self.conexion.commit()
+            return True
+            
         except Exception as e:
+            # Rollback en caso de error
             self.conexion.rollback()
-            #print(f"❌ Error durante la sincronización de la tabla {tabla_origen}: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Error de Sincronización", 
+                            f"Error al sincronizar empleados:\n\n{str(e)[:200]}...")
+            return False
+
+    def sincronizar_empresas(self):
+        """
+        Versión mejorada con mejor manejo de filtros y transacciones.
+        """
+        if not self.app.sql_server_manager.comprobar_conexion():
+            return False
+        
+        # Iniciar transacción
+        try:
+            self.cursor.execute("BEGIN TRANSACTION")
+            
+            # Obtener DataFrame desde SQL Server
+            df_empresas = self.app.sql_server_manager.obtener_empresas_dataframe()
+            
+            if df_empresas is None:
+                self.conexion.rollback()
+                from tkinter import messagebox
+                messagebox.showerror("Error de Consulta", 
+                                "No se pudo ejecutar la consulta de empresas en SQL Server")
+                return False
+            
+            if df_empresas.empty:
+                self.conexion.rollback()
+                from tkinter import messagebox
+                messagebox.showwarning("Sin Datos", 
+                                    "No se encontraron empresas activas en la base de datos.")
+                return False
+            
+            # Aplicar filtros de forma más robusta
+            df_final = self._aplicar_filtros_empresas(df_empresas)
+            
+            if df_final.empty:
+                self.conexion.rollback()
+                from tkinter import messagebox
+                messagebox.showwarning("Sin Datos Filtrados", 
+                                    "No se encontraron empresas después de aplicar los filtros de origen.")
+                return False
+            
+            # Validar estructura antes de guardar
+            columnas_esperadas = set(CLIENTES_COLS.keys())
+            columnas_recibidas = set(df_final.columns)
+            
+            if not columnas_esperadas.issubset(columnas_recibidas):
+                columnas_faltantes = columnas_esperadas - columnas_recibidas
+                self.conexion.rollback()
+                from tkinter import messagebox
+                messagebox.showerror("Error de Estructura", 
+                                f"Faltan columnas esperadas: {list(columnas_faltantes)}")
+                return False
+            
+            # Guardar en SQLite
+            df_final.to_sql(
+                name="empresas",
+                con=self.conexion,
+                if_exists='replace',
+                index=False,
+                method='multi'
+            )
+            
+            # Confirmar transacción
+            self.conexion.commit()
+            return True
+            
+        except Exception as e:
+            # Rollback en caso de error
+            self.conexion.rollback()
+            from tkinter import messagebox
+            messagebox.showerror("Error de Sincronización", 
+                            f"Error al sincronizar empresas:\n\n{str(e)[:200]}...")
+            return False
+
+    def _aplicar_filtros_empresas(self, df_empresas):
+        """
+        Método separado para aplicar filtros de empresas de forma más clara.
+        """
+        # Verificar que existen las columnas necesarias para filtrar
+        if 'origen' not in df_empresas.columns or 'name' not in df_empresas.columns:
+            # Si no existen las columnas de filtro, devolver todos los datos
+            return df_empresas.copy()
+        
+        try:
+            # Aplicar filtros por origen
+            mask_otros = df_empresas['origen'].str.contains('otros', case=False, na=False)
+            mask_cero = df_empresas['name'].str.startswith('0', na=False)
+            df_otros = df_empresas[mask_otros & mask_cero]
+            
+            mask_suasor = df_empresas['origen'].str.contains('suasor', case=False, na=False)
+            df_suasor = df_empresas[mask_suasor]
+            
+            mask_lexon = df_empresas['origen'].str.contains('lexon', case=False, na=False)
+            df_lexon = df_empresas[mask_lexon]
+            
+            # Combinar todos los filtros
+            dataframes_filtrados = [df for df in [df_otros, df_suasor, df_lexon] if not df.empty]
+            
+            if dataframes_filtrados:
+                df_final = pd.concat(dataframes_filtrados, ignore_index=True)
+                # Eliminar duplicados si los hay
+                df_final = df_final.drop_duplicates(subset=['vat'], keep='first')
+            else:
+                df_final = pd.DataFrame()
+            
+            return df_final
+            
+        except Exception as e:
+            print(f"⚠️ Error aplicando filtros de empresas: {e}")
+            # En caso de error en filtros, devolver datos sin filtrar
+            return df_empresas.copy()
+
+    # FUNCIÓN ADICIONAL: Sincronización con retry
+    def sincronizar_con_reintentos(self, max_intentos=3):
+        """
+        Sincronización con sistema de reintentos en caso de fallo.
+        """
+        for intento in range(1, max_intentos + 1):
+            try:
+                # Intentar reconectar si no hay conexión
+                if not self.app.sql_server_manager.conectado:
+                    if not self.app.sql_server_manager.reconectar():
+                        if intento == max_intentos:
+                            from tkinter import messagebox
+                            messagebox.showerror("Error de Conexión", 
+                                            "No se pudo establecer conexión con SQL Server después de varios intentos.")
+                            return False
+                        continue
+                
+                # Intentar sincronizar empleados
+                empleados_ok = self.sincronizar_empleados()
+                
+                # Intentar sincronizar empresas
+                empresas_ok = self.sincronizar_empresas()
+                
+                if empleados_ok and empresas_ok:
+                    return True
+                elif intento == max_intentos:
+                    from tkinter import messagebox
+                    resultado_empleados = "✅" if empleados_ok else "❌"
+                    resultado_empresas = "✅" if empresas_ok else "❌"
+                    messagebox.showwarning("Sincronización Parcial", 
+                                        f"Resultados de sincronización:\n"
+                                        f"{resultado_empleados} Empleados\n"
+                                        f"{resultado_empresas} Empresas")
+                    return empleados_ok or empresas_ok
+                
+            except Exception as e:
+                if intento == max_intentos:
+                    from tkinter import messagebox
+                    messagebox.showerror("Error de Sincronización", 
+                                    f"Error en sincronización (intento {intento}):\n{str(e)[:200]}...")
+                    return False
+                
+                # Pequeña pausa antes del siguiente intento
+                import time
+                time.sleep(1)
+        
+        return False
+
+
+
 
     def load_empleados_sqlite(self):
         """Carga los empleados desde SQLite en un DataFrame de pandas."""
         query = """
-            SELECT id, name, department_id, work_email, department_name 
+            SELECT id, nombre, apellido_1, department_name 
             FROM empleados
-            WHERE department_name IS NOT NULL AND department_name != 'Administration'
+            WHERE department_name IS NOT NULL AND department_name != 'ADMINISTRACION' AND activo = 1;
         """
         
         try:
             self.cursor.execute(query)
             empleados_data = self.cursor.fetchall()
             empleados_df = pd.DataFrame(empleados_data, columns=[col[0] for col in self.cursor.description])
-            empleados_l = empleados_df['name'].tolist()  # Lista de nombres
-            return empleados_l, empleados_df
+            empleados_df['name'] = empleados_df['nombre'] + " " + empleados_df['apellido_1']
+            empleados_dict = dict(zip(empleados_df['name'], empleados_df['id']))
+            return empleados_dict, empleados_df
         except Exception as e:
-            #print(f"Error al cargar empleados desde SQLite: {e}")
-            return [], pd.DataFrame()
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Error al cargar empleados desde SQLite:\n{e}")
+            return {}, pd.DataFrame()
 
     def load_empresas_sqlite(self):
         """Carga las empresas desde SQLite en un DataFrame de pandas."""
-        query = "SELECT id, name, vat FROM empresas"
+        query = "SELECT name, vat FROM empresas WHERE baja = 0"  # Solo empresas activas
         
         try:
             self.cursor.execute(query)
@@ -148,7 +284,8 @@ class DatabaseManager:
             empresas_df = pd.DataFrame(empresas_data, columns=[col[0] for col in self.cursor.description])
             return empresas_df
         except Exception as e:
-            #print(f"Error al cargar empresas desde SQLite: {e}")
+            from tkinter import messagebox
+            messagebox.showerror("Error", f"Error al cargar empresas desde SQLite:\n{e}")
             return pd.DataFrame()
 
     def obtener_registros(self, user: str) -> List[Dict[str, Any]]:
@@ -165,9 +302,6 @@ class DatabaseManager:
         registros = self.cursor.fetchall()
         columnas = ["id", "tiempo", "empresa", "concepto", "fecha_creacion"]
         return [dict(zip(columnas, row)) for row in registros]
-
-
-    
 
     def agregar_registro(self, tiempo: int, register_dic: dict, user: str, departamento: str):
         """
@@ -194,8 +328,6 @@ class DatabaseManager:
         self.cursor.execute(query, (tiempo, empresa, concepto, fecha_creacion, "working", user, departamento, descripcion))
         self.conexion.commit()
         return str(self.cursor.lastrowid)
-    
-
 
     def obtener_registro(self, registro_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -219,7 +351,6 @@ class DatabaseManager:
         Extrae un diccionario {empresa: cif} con valores únicos de todas las empresas 
         cuyo campo vinculada sea False (0) en la base de datos SQLite.
         
-        :param db_path: Ruta de la base de datos SQLite.
         :return: Diccionario con empresas no vinculadas y sus respectivos CIF.
         """
         conn = sqlite3.connect(self.db_path)
@@ -241,12 +372,9 @@ class DatabaseManager:
         Se contempla el campo 'descripcion' si se incluye en nuevos_valores.
         """
         if nuevos_valores is None:
-            #print("Error: register_dic es None en update_register()")
             return
 
         registro_id = nuevos_valores["id"]
-
-        #print(nuevos_valores)
 
         if nuevos_valores or tiempo is not None:
             columnas_actualizar = []
@@ -263,13 +391,11 @@ class DatabaseManager:
             set_clause = ", ".join(f"{col} = ?" for col in columnas_actualizar)
             valores.append(registro_id)
             query = f"UPDATE {TABLA_REGISTROS} SET {set_clause} WHERE id = ?"
-            #print(valores)
             self.cursor.execute(query, valores)
         else:
             raise ValueError("Debe proporcionar nuevos valores, un tiempo a actualizar o ambos.")
     
         self.conexion.commit()
-
 
     def obtener_registros_imputando(self, usuario):
         """
@@ -284,18 +410,15 @@ class DatabaseManager:
         columnas = ["id"] + list(self.columnas.keys())
         return [dict(zip(columnas, row)) for row in registros]
 
-
-
     def vincular_empresa(self, empresa_anterior: str, empresa_real: str, cif_real: str) -> None:
         """
         Reemplaza todos los registros donde la empresa sea 'empresa_anterior' con 'empresa_real'.
-        Obtiene el CIF de 'empresa_real' desde 'self.empresas_dic' y establece 'vinculada' en 1.
+        Obtiene el CIF de 'empresa_real' y establece 'vinculada' en 1.
 
         :param empresa_anterior: Nombre de la empresa a reemplazar.
         :param empresa_real: Nombre de la empresa que sustituirá a la anterior.
         :param cif_real: Nombre del cif de la empresa que sustituirá a la anterior.
         """
-
         # Actualizar registros que contengan la empresa anterior
         query_actualizar = f"""
             UPDATE {TABLA_REGISTROS}
@@ -304,9 +427,6 @@ class DatabaseManager:
         """
         self.cursor.execute(query_actualizar, (empresa_real, cif_real, empresa_anterior))
         self.conexion.commit()
-
-        #print(f"Se han actualizado los registros de '{empresa_anterior}' a '{empresa_real}' con CIF '{cif_real}' y vinculada '1'.")
-
 
     def borrar_registro(self, registro_id: int) -> None:
         """
@@ -326,8 +446,3 @@ class DatabaseManager:
             self.cerrar_conexion()
         except Exception:
             pass
-
-
-
-
-
