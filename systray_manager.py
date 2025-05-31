@@ -66,9 +66,30 @@ class SystrayManager:
     def toggle_app_window(self, icon=None, item=None):
         """Alterna entre mostrar y ocultar la ventana principal de la aplicación."""
         if not self.app.root.winfo_viewable():  # Si la ventana no es visible
-            self.app.root.deiconify()  # Mostrar la ventana
+            # Mostrar ventana principal
+            self.app.root.deiconify()
+            self.app.root.lift()
+            self.app.root.attributes("-topmost", True)
+            self.app.root.after(100, lambda: self.app.root.attributes("-topmost", False))
+            self.app.root.focus_force()
+            
+            # Ocultar ventana del taskbar si existe
+            if hasattr(self.app, 'taskbar_window') and self.app.taskbar_window:
+                try:
+                    self.app.taskbar_window.withdraw()
+                except:
+                    pass
         else:
-            self.app.root.withdraw()  # Ocultar la ventana
+            # Ocultar ventana principal
+            self.app.root.withdraw()
+            
+            # Mostrar ventana del taskbar minimizada si existe
+            if hasattr(self.app, 'taskbar_window') and self.app.taskbar_window:
+                try:
+                    self.app.taskbar_window.deiconify()
+                    self.app.taskbar_window.iconify()
+                except:
+                    pass
 
     def update_tooltip(self, new_text):
         """Actualiza el texto del tooltip del systray y el menú de información."""

@@ -1,43 +1,56 @@
 import os, sys, ctypes, time
 import tkinter as tk
-from tkinter import ttk, simpledialog, messagebox
-from sqlite import DatabaseManager
-from sql_server import SQLServerManager
-from session_manager import SessionManager
-from systray_manager import SystrayManager
-from search_frame import BusquedaFrame
-from splash_screen import SplashScreen
-from functions import procesar_nombre, seconds_to_string, configure_styles
-from functions import return_fecha_actual, verificar_o_crear_carpeta_archivos
-from functions import COLORES, ICON, DB_PATH
-from register import TasksAdmin
+from tkinter import ttk
+from functions import CustomMessageBox as messagebox, ToolTip
+from splash_screen import SplashFrame 
 
-
-
+# Configuración inicial
 if sys.platform == "win32":
     os.environ["PYTHONIOENCODING"] = "utf-8"
     os.environ["TQDM_DISABLE"] = "True"
 
-# 🔹 Solución para evitar el error en el ejecutable
+# Solución para evitar el error en el ejecutable
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w")
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w")
 
-from tqdm import tqdm
-tqdm_kwargs = {"file": sys.stderr}  # Evitar errores de escritura
-for i in tqdm(range(100), **tqdm_kwargs):
-    pass
-
-import warnings
-warnings.simplefilter("ignore", category=UserWarning)
 
 
+def load_heavy_modules():
+    """
+    Importa todos los módulos pesados después del loading inicial.
+    """
+    global DatabaseManager, SQLServerManager, SessionManager, SystrayManager
+    global BusquedaFrame, procesar_nombre, seconds_to_string
+    global configure_styles, return_fecha_actual, verificar_o_crear_carpeta_archivos
+    global COLORES, ICON, DB_PATH, TasksAdmin, simpledialog
+    
+    # Imports pesados
+    from sqlite import DatabaseManager
+    from sql_server import SQLServerManager
+    from session_manager import SessionManager
+    from systray_manager import SystrayManager
+    from search_frame import BusquedaFrame
+    from functions import procesar_nombre, seconds_to_string, configure_styles
+    from functions import return_fecha_actual, verificar_o_crear_carpeta_archivos
+    from functions import COLORES, ICON, DB_PATH
+    from register import TasksAdmin
+    from tkinter import simpledialog
+    
+    # tqdm y warnings
+    from tqdm import tqdm
+    tqdm_kwargs = {"file": sys.stderr}
+    for i in tqdm(range(100), **tqdm_kwargs):
+        pass
+    
+    import warnings
+    warnings.simplefilter("ignore", category=UserWarning)
 
 
 
 class ImputacionesApp:
-    def __init__(self, root, splash=None):
+    def __init__(self, root, splash=None, configure_styles_internally=True):
         self.root = root
         self._running = False
         self._paused = False
@@ -48,29 +61,30 @@ class ImputacionesApp:
 
         # Verifica o crea la carpeta "archivos"
         verificar_o_crear_carpeta_archivos()
+        
+        # SOLO configurar estilos si se solicita explícitamente
+        if configure_styles_internally:
+            configure_styles()
 
-        # Configuración inicial de la ventana principal y estilos
-        self.configure_root()
-        configure_styles()
-
- # --- Inicialización de instancias clave con actualización de la splash ---
+        # --- Inicialización de instancias clave con progreso ---
         if splash:
-            splash.update_message("Iniciando Conexión...")
+            splash.update_message("Iniciando conexión...")
+            splash.update_progress(30)
         self.sql_server_manager = SQLServerManager(self.root)
 
         if splash:
-            splash.update_progress(25)
             splash.update_message("Cargando datos desde SUASOR...")
+            splash.update_progress(50)
         self.db_manager = DatabaseManager(self, DB_PATH)
 
         if splash:
-            splash.update_progress(50)
             splash.update_message("Inicializando sesión...")
+            splash.update_progress(70)
         self.session = SessionManager(self)
 
         if splash:
-            splash.update_progress(75)
             splash.update_message("Terminando configuración...")
+            splash.update_progress(90)
         self.systray = SystrayManager(self, ICON, "SIN USUARIO")
 
         # Secciones de la aplicación
@@ -79,21 +93,13 @@ class ImputacionesApp:
         self.create_toggle_section()
         self.tasks_admin = TasksAdmin(self)
         
-        self.systray.initialized.wait()  # Esperar a que el systray esté listo
+        self.systray.initialized.wait()
 
-
-        if splash:
-            splash.update_progress(100)
-            splash.update_message("¡Listo!")
-            time.sleep(0.5)  # Pausa breve para mostrar el 100%
-            splash.destroy()
-
-        
         if self.session.logged_in:
             self.logged_in()
         else:
             self.set_logout_state()
-            
+
 
 
 #--------------------------------------------------------------------------------------------------------LOGICAL
@@ -108,18 +114,29 @@ class ImputacionesApp:
     def logged_in(self):
         #cargamos todas las empresas al empresas_dic incluyendo las temporales desde las tareas del usuario
         self.empresas_suasor, self.empresas_dic = self.session.return_empresas_combo_values()
+        self.conceptos_dict = self.session.return_conceptos_combo_values()
+
         #cargamos el sqlite al treeview con los registros del usuario
         self.tasks_admin.cargar_datos_desde_sqlite()
 
         #miramos y subimos si hay registros imputando (pendientes de imputar en el sqlserver) para el usuario
-        self.sql_server_manager.subir_registros(self.db_manager, self.session.user)
+        self.sql_server_manager.subir_registros(self.db_manager, self.session.user_id)
         
         self.set_login_state()
 
-    #recarga las empresas desde la base de datos y del csv de empresas y actualiza el combobox
+    #recarga las empresas y conceptos desde la base de datos y actualiza el combobox
     def reload_empresas_combobox_update(self):
         self.empresas_suasor, self.empresas_dic = self.session.return_empresas_combo_values()
         self.search_frame.configurar_combobox(self.empresas_dic, seleccion="Selecciona una empresa")
+        self.conceptos_dict = self.session.return_conceptos_combo_values()
+
+    
+    def actualizar_datos_desde_servidor(self):
+        """Función para actualizar datos desde SQL Server desde el botón del header."""
+        if hasattr(self, 'session') and self.session:
+            self.session.actualizar_datos_desde_servidor()
+        else:
+            messagebox.showerror("Error", "No hay sesión activa para actualizar datos.")
 
 
     # Función para actualizar las etiquetas de empresa y CIF seleccionados
@@ -248,7 +265,11 @@ class ImputacionesApp:
     
             if self.elapsed_time % 30 == 0:  # Actualizar solo cada 30 segundos
                 #captura los valores de concepto y descripcion
-                self.register_dic["concepto"] = self.widgets["selected_concepto_entry"].get()
+                concepto_descripcion = self.widgets["selected_concepto_combobox"].get()
+                if concepto_descripcion and hasattr(self, 'conceptos_dict'):
+                    self.register_dic["concepto"] = self.conceptos_dict.get(concepto_descripcion, "")
+                else:
+                    self.register_dic["concepto"] = ""
                 self.register_dic["descripcion"] = self.widgets["selected_descripcion_entry"].get()
                 self.tasks_admin.update_register(self.register_dic, self.elapsed_time)
     
@@ -273,11 +294,24 @@ class ImputacionesApp:
         # Detener el parpadeo siempre
         self.toggle_blinking(False)
 
-        #captura los valores de concepto y descripcion
-        self.register_dic["concepto"] = self.widgets["selected_concepto_entry"].get()
+        # 🔹 CAPTURAR VALORES CORRECTAMENTE
+        # Convertir descripción a código para concepto
+        concepto_descripcion = self.widgets["selected_concepto_combobox"].get()
+        if concepto_descripcion and hasattr(self, 'conceptos_dict'):
+            self.register_dic["concepto"] = self.conceptos_dict.get(concepto_descripcion, "")
+        else:
+            self.register_dic["concepto"] = ""
+        
         self.register_dic["descripcion"] = self.widgets["selected_descripcion_entry"].get()
         
         if self.running:  # Detiene el temporizador
+            tarea_interna = self.register_dic.get("empresa", "").startswith('0')
+            if not tarea_interna and not self.register_dic.get("concepto", ""):
+                messagebox.showerror("Concepto requerido", 
+                                "Debe seleccionar un concepto para esta empresa.\n"
+                                "Solo las tareas internas pueden no tener concepto.")
+                return  # Salir sin detener el temporizador
+
             self.running = False
             self._paused = False
 
@@ -325,70 +359,155 @@ class ImputacionesApp:
      
 
     def configure_root(self):
-        """Configura las propiedades de la ventana principal."""
+        """Configura la ventana básica."""
+        
+        # ✅ RESTAURAR BARRA DE TÍTULO (crucial después del splash)
+        self.root.overrideredirect(False)
+        
+        # Título de la ventana
         self.root.title("Imputaciones FrenchDesk")
         
-        # Dimensiones de la ventana
-        window_width = 800
+        # Dimensiones y posición
+        window_width = 1100
         window_height = 600
-
-        # Obtén las dimensiones de la pantalla
         screen_width = self.root.winfo_screenwidth()
         screen_height = self.root.winfo_screenheight()
-        # Calcula la posición en la parte inferior derecha
         position_right = screen_width - window_width - 10
-        position_bottom = screen_height - window_height - 80  # Ajustar un poco para evitar la barra de tareas
-    
-        # Aplica las dimensiones y posición
-        self.root.geometry(f"{window_width}x{window_height}+{position_right}+{position_bottom}")
-        self.root.configure(bg=COLORES["negro"])  # Fondo negro
-
-        # Permitir redimensionamiento, pero sin botón de maximizar
-        self.root.resizable(True, True)  # Permitir redimensionar manualmente
-        #self.root.attributes("-toolwindow", True)  # Oculta el botón de maximizar en Windows
-
-    
-        # Definir un App User Model ID único
-        myappid = "com.mycompany.myproduct.version"
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
-        self.root.iconbitmap(ICON)
-    
-        #intercepta el evento de cerrar la ventana y ejecuta el método self.minimize_to_systray
-        self.root.protocol("WM_DELETE_WINDOW", self.minimize_to_systray)
+        position_bottom = screen_height - window_height - 80
         
+        self.root.geometry(f"{window_width}x{window_height}+{position_right}+{position_bottom}")
+        self.root.configure(bg=COLORES["negro"])
+        
+        try:
+            # Configurar icono
+            self.root.iconbitmap(ICON)
+            
+            # ✅ App ID para que aparezca correctamente en la barra de tareas
+            myappid = "com.frenchdesk.imputaciones.1.0"
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+            
+        except Exception as e:
+            print(f"Advertencia: Configuración básica de ventana: {e}")
+        
+        # Habilitar redimensionamiento
+        self.root.resizable(True, True)
+
+
+
     def minimize_to_systray(self):
         """Oculta la ventana principal en la bandeja del sistema."""
         try:
-            if self.root.winfo_exists():  # Verifica si la ventana aún existe
-                self.root.withdraw()  # Oculta la ventana principal
+            if self.root.winfo_exists():
+                self.root.withdraw()
         except Exception as e:
-            #print(f"Error al minimizar a la bandeja del sistema: {e}")
             pass
+
+
+    def minimize_to_taskbar(self):
+        """Minimiza la ventana normalmente."""
+        try:
+            self.root.iconify()
+        except:
+            self.root.withdraw()
 
     def quit_application(self):
         """Función para salir completamente de la aplicación."""
         try:
             if self.systray:
-                self.systray.quit_application()  # Detiene el systray
-            self.root.destroy()  # Cierra la ventana de tkinter
+                self.systray.quit_application()
+            self.root.destroy()
         except Exception as e:
-            #print(f"Error al cerrar la aplicación: {e}")
             pass
         finally:
-            os._exit(0)  # Fuerza la salida del programa
+            os._exit(0)
 
 
+
+    def make_draggable(self, widget):
+        """Hace que la ventana sea arrastrable desde un widget específico."""
+        def start_drag(event):
+            widget.start_x = event.x
+            widget.start_y = event.y
+
+        def do_drag(event):
+            x = self.root.winfo_x() + (event.x - widget.start_x)
+            y = self.root.winfo_y() + (event.y - widget.start_y)
+            self.root.geometry(f"+{x}+{y}")
+
+        widget.bind("<Button-1>", start_drag)
+        widget.bind("<B1-Motion>", do_drag)
+
+    def setup_window_dragging(self):
+        """Configura el arrastre de ventana en el header_frame."""
+        # Hacer el header arrastrable (se llamará después de crear el header_frame)
+        if hasattr(self, 'header_frame'):
+            self.make_draggable(self.header_frame)
+            # También hacer arrastrable el user_label para más área de arrastre
+            if hasattr(self, 'user_label'):
+                self.make_draggable(self.user_label)
+
+
+    
 #--------------------------------------------------------------------------------------------------------GUI FRAMES
     
+
     def create_user_section(self):
-        """Crea la sección de usuario."""
-        user_frame = tk.Frame(self.root, bg=COLORES["rojo_oscuro"], bd=2, relief="ridge")
-        user_frame.pack(padx=5, pady=(5,2), fill="x")
-        self.user_label = ttk.Label(user_frame, text="Usuario no logado", style="Main.TLabel")
-        self.user_label.pack(side="left", padx=10, pady=5)
+        """Crea la sección header solo con usuario y logout."""
         
-        self.logout_button = ttk.Button(user_frame, text="Logout", style="Logout.TButton", command=self.handle_logout_button)
-        self.logout_button.pack(side="right", padx=20, pady=5)
+        # Header frame principal
+        self.header_frame = tk.Frame(self.root, bg=COLORES["rojo_oscuro"], bd=2, relief="ridge")
+        self.header_frame.pack(padx=5, pady=(5,2), fill="x")
+        
+        # User frame (lado izquierdo)
+        user_frame = tk.Frame(self.header_frame, bg=COLORES["rojo_oscuro"])
+        user_frame.pack(side="left", expand=False)
+        
+        # Label del usuario
+        self.user_label = ttk.Label(user_frame, text="Usuario no logado", style="Main.TLabel")
+        self.user_label.pack(side="left", padx=(10, 0), pady=5)
+        
+        # Botón de logout
+        self.logout_button = ttk.Button(user_frame, text="Logout", style="Logout.TButton", 
+                                    command=self.handle_logout_button)
+        self.logout_button.pack(side="left", padx=(0, 0), pady=5)
+        
+        # Buttons frame (lado derecho)
+        buttons_frame = tk.Frame(self.header_frame, bg=COLORES["rojo_oscuro"])
+        buttons_frame.pack(side="right", padx=(5, 10), pady=5)
+
+        # ✅ BOTÓN DE INSERTAR MANUAL MEJORADO
+        self.insertar_button = ttk.Button(buttons_frame, text="📝 Entrada Registos", 
+                                        style="Insert.TButton", command=self.abrir_insercion_manual,
+                                        cursor="hand2")
+        self.insertar_button.pack(side="right", padx=(8, 0), pady=2)
+
+        # ✅ CREAR TOOLTIP PARA EL BOTÓN DE INSERTAR
+        ToolTip(self.insertar_button, "Inserción Manual de Registros\nCrear nuevos registros de tiempo manualmente")
+        
+        # ✅ BOTÓN DE ACTUALIZAR MEJORADO
+        self.refresh_button = ttk.Button(buttons_frame, text="🔄 Actualizar desde SUASOR", 
+                                    style="Sync.TButton", command=self.actualizar_datos_desde_servidor,
+                                    cursor="hand2")
+        self.refresh_button.pack(side="right", padx=(8, 0), pady=2)
+        
+        # ✅ CREAR TOOLTIP PARA EL BOTÓN DE SINCRONIZAR
+        ToolTip(self.refresh_button, "Sincronizar con Servidor\nActualiza empleados, empresas y conceptos desde SQL Server")
+        
+        # Arrastre opcional
+        self.setup_window_dragging()
+
+
+    # ✅ AÑADIR MÉTODO PARA MANEJAR EL BOTÓN DE INSERTAR
+    def abrir_insercion_manual(self):
+        """Abre la ventana de inserción manual de registros."""
+        if hasattr(self, 'session') and self.session.logged_in:
+            # Solo permitir si hay usuario logueado
+            if hasattr(self, 'tasks_admin'):
+                self.tasks_admin.insercion_manual()
+            else:
+                messagebox.showerror("Error", "El sistema de tareas no está inicializado.")
+        else:
+            messagebox.showwarning("Sin usuario", "Debe iniciar sesión para insertar registros.")
 
 
     def create_toggle_section(self):
@@ -399,38 +518,39 @@ class ImputacionesApp:
         # Diccionario de widgets para facilitar manipulación
         self.widgets = {}
 
-        # 🟢 Primera fila: Empresa
+        # 🟢 Fila 0: Empresa + CIF
         self.widgets["selected_empresa_label"] = ttk.Label(self.toggle_frame, style="Main.TLabel")
-
-        # 🔵 Segunda fila: CIF y Concepto
+        
         self.widgets["cif_frame"] = tk.Frame(self.toggle_frame, bg=COLORES["rojo_oscuro"])  # Contenedor para CIF
-
         self.widgets["cif_label"] = ttk.Label(self.widgets["cif_frame"], text="CIF:", style="TLabel")
         self.widgets["selected_cif_label"] = ttk.Label(self.widgets["cif_frame"], font=("Courier", 13, "bold"), foreground="black", width=10)
-
+        
         self.widgets["cif_label"].grid(row=0, column=0, padx=2, sticky="w")
         self.widgets["selected_cif_label"].grid(row=0, column=1, padx=5, sticky="w")
 
-        self.widgets["concepto_frame"] = tk.Frame(self.toggle_frame, bg=COLORES["rojo_oscuro"])  # Contenedor para concepto
+        # 🔵 Fila 1: Labels de Concepto y Descripción (en la misma columna)
+        self.widgets["labels_frame"] = tk.Frame(self.toggle_frame, bg=COLORES["rojo_oscuro"])  # Contenedor para labels
+        
+        self.widgets["concepto_label"] = ttk.Label(self.widgets["labels_frame"], text="Concepto:")
+        self.widgets["descripcion_label"] = ttk.Label(self.widgets["labels_frame"], text="Descripción:")
+        
+        self.widgets["concepto_label"].grid(row=0, column=0, padx=2, pady=2, sticky="w")
+        self.widgets["descripcion_label"].grid(row=1, column=0, padx=2, pady=2, sticky="w")
 
-        self.widgets["concepto_label"] = ttk.Label(self.widgets["concepto_frame"], text="Concepto:")
-        self.widgets["selected_concepto_entry"] = ttk.Entry(self.widgets["concepto_frame"], justify="left", width=60, 
+        # 🔵 Fila 1: Inputs de Concepto y Descripción (en la misma columna)
+        self.widgets["inputs_frame"] = tk.Frame(self.toggle_frame, bg=COLORES["rojo_oscuro"])  # Contenedor para inputs
+        
+        self.widgets["selected_concepto_combobox"] = ttk.Combobox(self.widgets["inputs_frame"], justify="left", 
+                                                                font=("Courier", 9, "bold"), foreground="black", state="readonly")
+        self.widgets["selected_descripcion_entry"] = ttk.Entry(self.widgets["inputs_frame"], justify="left", 
                                                             font=("Courier", 9, "bold"), foreground="black")
+        
+        self.widgets["selected_concepto_combobox"].grid(row=0, column=0, padx=5, pady=2, sticky="ew")
+        self.widgets["selected_descripcion_entry"].grid(row=1, column=0, padx=5, pady=2, sticky="ew")
+        
+        self.widgets["inputs_frame"].grid_columnconfigure(0, weight=1)  # Los inputs se estiran
 
-        self.widgets["concepto_label"].grid(row=0, column=0, padx=2, sticky="w")
-        self.widgets["selected_concepto_entry"].grid(row=0, column=1, padx=5, sticky="ew")
-
-        # 🔴 Tercera fila: descripcion
-        self.widgets["descripcion_frame"] = tk.Frame(self.toggle_frame, bg=COLORES["rojo_oscuro"])  # Contenedor para descripcion
-
-        self.widgets["descripcion_label"] = ttk.Label(self.widgets["descripcion_frame"], text="Descripción:")
-        self.widgets["selected_descripcion_entry"] = ttk.Entry(self.widgets["descripcion_frame"], justify="left", width=47, 
-                                                                 font=("Courier", 9, "bold"), foreground="black")
-
-        self.widgets["descripcion_label"].grid(row=0, column=0, padx=2, sticky="w")
-        self.widgets["selected_descripcion_entry"].grid(row=0, column=1, padx=5, sticky="ew")
-
-
+        # 🔴 Fila 2: Botones (como estaba)
         self.widgets["buttons_frame"] = tk.Frame(self.toggle_frame, bg=COLORES["rojo_oscuro"]) # Contenedor para Buttons
         self.widgets["buttons_frame"].grid_columnconfigure(0, weight=1, minsize=80)
         self.widgets["buttons_frame"].grid_columnconfigure(1, weight=0, minsize=60)
@@ -440,33 +560,31 @@ class ImputacionesApp:
         self.widgets["pause_button"] = ttk.Button(self.widgets["buttons_frame"], width=3, style="Pause.TButton", command=lambda: self.pause_timer())
         self.widgets["play_stop_button"] = ttk.Button(self.widgets["buttons_frame"], width=3, style="Play.TButton", command=lambda: self.start_stop_timer())
 
-        # Organizar dentro del Frame (CIF y su valor)
+        # Organizar dentro del buttons_frame
         self.widgets["timer_label"].grid(row=0, column=0, padx=7, sticky="w")
         self.widgets["pause_button"].grid(row=0, column=1, padx=1, sticky="w")
         self.widgets["play_stop_button"].grid(row=0, column=2, padx=1, sticky="w")
 
-        # 🔹 Layout de los widgets
+        # 🔹 Layout NUEVO de los widgets
         layout = [
-            # Fila 0: Empresa
-            ("selected_empresa_label", 0, 0, 4, "w"),
+            # Fila 0: Empresa (3 columnas) + CIF (última columna a la derecha)
+            ("selected_empresa_label", 0, 0, 3, "w"),
+            ("cif_frame", 0, 3, 1, "e"),
 
-            # Fila 1: CIF y Concepto. Usamos Frame en lugar de los Labels
-            ("cif_frame", 1, 0, 1, "w"),
-            ("concepto_frame", 1, 1, 3, "w"),
-
-            # Fila 2: descripcion, temporizador y Botones
-            ("descripcion_frame", 2, 0, 3, "w"),
-            ("buttons_frame", 2, 3, 1, "w"),
+            # Fila 1: Labels (1 columna) + Inputs (2 columnas) + Botones (1 columna)
+            ("labels_frame", 1, 0, 1, "w"),
+            ("inputs_frame", 1, 1, 2, "ew"),
+            ("buttons_frame", 1, 3, 1, "w"),
         ]
 
         # 🔹 Configurar columnas y filas dinámicamente
-        for i in range(3):
+        for i in range(2): 
             self.toggle_frame.grid_rowconfigure(i, weight=1, minsize=40)
 
-        self.toggle_frame.grid_columnconfigure(0, weight=0, minsize=80)
-        self.toggle_frame.grid_columnconfigure(1, weight=1, minsize=90)
-        self.toggle_frame.grid_columnconfigure(2, weight=0, minsize=80)
-        self.toggle_frame.grid_columnconfigure(3, weight=0, minsize=80)
+        self.toggle_frame.grid_columnconfigure(0, weight=0, minsize=100)  # Labels
+        self.toggle_frame.grid_columnconfigure(1, weight=1, minsize=200)  # Inputs (se estiran)
+        self.toggle_frame.grid_columnconfigure(2, weight=1, minsize=200)  # Inputs continúa
+        self.toggle_frame.grid_columnconfigure(3, weight=0, minsize=120)  # CIF + Botones
 
         # 🔹 Aplicar layout a cada widget
         for widget_name, row, col, colspan, sticky in layout:
@@ -534,15 +652,16 @@ class ImputacionesApp:
 
 
     def configurar_label(self, widget, mostrar=True, texto=None, estilo=None):
-        """Muestra/oculta el widget pasado y actualiza su texto si se proporciona."""
         if mostrar:
             self.widgets[widget].grid()
             if texto is not None:
                 if isinstance(self.widgets[widget], ttk.Entry):
-                    self.widgets[widget].delete(0, tk.END)  # Borra el contenido actual
-                    self.widgets[widget].insert(0, texto)  # Inserta el nuevo texto
+                    self.widgets[widget].delete(0, tk.END)
+                    self.widgets[widget].insert(0, texto)
+                elif isinstance(self.widgets[widget], ttk.Combobox):
+                    self.widgets[widget].set(texto)  # Solo para casos simples
                 else:
-                    self.widgets[widget].config(text=texto)  # Para otros widgets como Labels
+                    self.widgets[widget].config(text=texto)
             if estilo is not None:
                 self.widgets[widget].config(style=estilo)
         else:
@@ -607,7 +726,7 @@ class ImputacionesApp:
         # Posicionar frames
         self.search_frame.pack(padx=5, pady=2, fill="x")
         self.toggle_frame.pack(padx=5, pady=2, fill="x")
-        self.tasks_admin.pack()  
+        self.tasks_admin.pack()
         
         # Widgets dentro de search_frame
         self.search_frame.configurar_combobox(self.empresas_dic, seleccion="Selecciona una empresa")
@@ -617,7 +736,8 @@ class ImputacionesApp:
         self.configurar_label(widget= "selected_cif_label", mostrar=True, texto="-")
 
         # 🔹 AGREGAR: Deshabilitar campos concepto y descripción
-        self.widgets["selected_concepto_entry"].config(state="disabled")
+        self.widgets["selected_concepto_combobox"]["values"] = list(self.conceptos_dict.keys())
+        self.widgets["selected_concepto_combobox"].config(state="disabled")
         self.widgets["selected_descripcion_entry"].config(state="disabled")
             
         # Reinicia contador
@@ -639,8 +759,6 @@ class ImputacionesApp:
     def set_empresa_seleccionada_state(self, new_time=None):
         """Estado: Empresa seleccionada, contador detenido."""
 
-        #print(self.register_dic)
-
         self.configurar_label(widget="selected_empresa_label", mostrar=True, texto=self.register_dic["empresa"])
         self.configurar_label(widget="selected_cif_label", mostrar=True, texto=self.register_dic["cif"])
 
@@ -653,10 +771,25 @@ class ImputacionesApp:
             self.tasks_admin.treeview_manager.color_fila(color="yellow", id_fila=self.register_dic["id"]) #amarillo el id seleccionado
         
         
-        # 🔹 MODIFICAR: Habilitar campos y configurar valores
-        self.widgets["selected_concepto_entry"].config(state="normal")
+         # 🔹 HABILITAR COMBOBOX DE CONCEPTOS Y CONFIGURAR VALORES
+        self.widgets["selected_concepto_combobox"].config(state="readonly")
+        
+        # Buscar la descripción que corresponde al código almacenado
+        concepto_codigo = self.register_dic["concepto"]
+        concepto_descripcion = ""
+        
+        if concepto_codigo and hasattr(self, 'conceptos_dict'):
+            # Buscar por valor (código) para obtener la clave (descripción)
+            for desc, codigo in self.conceptos_dict.items():
+                if codigo == concepto_codigo:
+                    concepto_descripcion = desc
+                    break
+
+        # Configurar directamente el combobox
+        self.widgets["selected_concepto_combobox"].set(concepto_descripcion)
+        
+        # 🔹 HABILITAR DESCRIPCIÓN
         self.widgets["selected_descripcion_entry"].config(state="normal")
-        self.configurar_label(widget="selected_concepto_entry", texto=self.register_dic["concepto"])
         self.configurar_label(widget="selected_descripcion_entry", texto=self.register_dic["descripcion"])
 
 
@@ -717,12 +850,17 @@ class ImputacionesApp:
 
         self.configurar_label(widget="selected_empresa_label", mostrar=True, texto="No seleccionada")
         self.configurar_label(widget="selected_cif_label", mostrar=True, texto="-")
-        self.configurar_label(widget="selected_concepto_entry", mostrar=True, texto="")
-        self.configurar_label(widget="selected_descripcion_entry", mostrar=True, texto="")
-        # 🔹 AGREGAR: Deshabilitar campos después de limpiarlos
-        self.widgets["selected_concepto_entry"].config(state="disabled")
-        self.widgets["selected_descripcion_entry"].config(state="disabled")
         
+        # 🔹 LIMPIAR COMBOBOX EXPLÍCITAMENTE
+        self.widgets["selected_concepto_combobox"].set("")  # Forzar limpieza
+        self.configurar_label(widget="selected_concepto_combobox", mostrar=True, texto="")
+        
+        self.configurar_label(widget="selected_descripcion_entry", mostrar=True, texto="")
+        
+        # 🔹 DESHABILITAR CAMPOS DESPUÉS DE LIMPIARLOS
+        self.widgets["selected_concepto_combobox"].config(state="disabled")
+        self.widgets["selected_descripcion_entry"].config(state="disabled")
+            
         self.tasks_admin.treeview_manager.color_fila(color="white")
         self.tasks_admin.treeview_manager.habilitar_interaccion_treeview()
 
@@ -736,19 +874,70 @@ class ImputacionesApp:
 
 
 
+
 def main():
-    # Crear la ventana principal y ocultarla inicialmente
+    # 1️⃣ Crear UNA SOLA ventana root desde el principio
     root = tk.Tk()
-    root.withdraw()  # Oculta la ventana principal mientras se muestra la splash
+    root.title("Imputaciones FrenchDesk")
+    root.geometry("400x200")
+    root.resizable(False, False)
+    
+    # ✅ QUITAR BARRA DE TÍTULO DEL SPLASH
+    root.overrideredirect(True)
+    
+    # Centrar ventana
+    root.update_idletasks()
+    x = (root.winfo_screenwidth() // 2) - 200
+    y = (root.winfo_screenheight() // 2) - 100
+    root.geometry(f"400x200+{x}+{y}")
+    
+    # 2️⃣ Crear splash como Frame dentro de root
+    splash_frame = SplashFrame(root)
+    
+    def load_and_start():
+        try:
+            # 3️⃣ Cargando módulos
+            splash_frame.update_message("Cargando módulos...")
+            splash_frame.update_progress(10)
+            load_heavy_modules()
+            
+            # 4️⃣ Configurar estilos INMEDIATAMENTE en root limpio
+            splash_frame.update_message("Configurando estilos...")
+            splash_frame.update_progress(20)
+            configure_styles()
+            
+            # 5️⃣ Crear aplicación usando el MISMO root
+            splash_frame.update_message("Iniciando conexión...")
+            splash_frame.update_progress(30)
+            
+            # Crear la app sin splash (porque ya tenemos el splash_frame)
+            app = ImputacionesApp(root, splash=splash_frame, configure_styles_internally=False)
+            app.configure_root()
 
-    # Crear y mostrar la pantalla splash
-    splash = SplashScreen(root)
-
-    # Inicializar la aplicación, pasando la splash para que se actualice durante el init
-    app = ImputacionesApp(root, splash)
-
-    # Una vez terminada la inicialización, mostrar la ventana principal
-    root.deiconify()
+            # 6️⃣ Destruir el splash frame y redimensionar ventana
+            splash_frame.update_message("¡Listo!")
+            splash_frame.update_progress(100)
+            time.sleep(0.3)
+            splash_frame.destroy_splash()
+            
+            # Redimensionar ventana para la aplicación final
+            window_width = 1100
+            window_height = 600
+            screen_width = root.winfo_screenwidth()
+            screen_height = root.winfo_screenheight()
+            position_right = screen_width - window_width - 10
+            position_bottom = screen_height - window_height - 80
+            root.geometry(f"{window_width}x{window_height}+{position_right}+{position_bottom}")
+            root.resizable(True, True)
+            
+            root.mainloop()
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al cargar la aplicación:\n{e}")
+            sys.exit(1)
+    
+    # 7️⃣ Iniciar carga después de mostrar splash
+    root.after(300, load_and_start)
     root.mainloop()
 
 if __name__ == "__main__":

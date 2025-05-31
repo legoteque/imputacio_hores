@@ -1,6 +1,7 @@
 import os, json
 from collections import OrderedDict
 from functions import CONFIG_FILE, DEFAULT_CONFIG
+from functions import CustomMessageBox as messagebox
 
 
 import os
@@ -15,6 +16,7 @@ class SessionManager:
         #quan entrem carrega les taules de empleados y empresas del sqlserver al sqlite
         self.app.db_manager.sincronizar_empleados()
         self.app.db_manager.sincronizar_empresas()
+        self.app.db_manager.sincronizar_conceptos()
 
         #extraiem la informacio del sqlite
         self.empleados_dict, self.empleados_df = self.app.db_manager.load_empleados_sqlite()
@@ -67,7 +69,21 @@ class SessionManager:
         else:
             return empresas_dic
         
-       
+    def return_conceptos_combo_values(self):
+        """Devuelve un diccionario con los conceptos del departamento del usuario."""
+        try:
+            conceptos_df = self.app.db_manager.load_conceptos_sqlite()
+            if conceptos_df.empty:
+                return {}
+            
+            # Crear diccionario {Descripcion: Cod_concepto}
+            conceptos_dict = dict(zip(conceptos_df['Descripcion'], conceptos_df['Cod_ concepto']))
+            return conceptos_dict
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al cargar conceptos:\n{e}")
+            return {}
+
+
     def load_config(self):
         """Carga el archivo de configuración o lo crea si no existe.
         Si detecta formato antiguo, crea uno nuevo predeterminado."""
@@ -77,22 +93,15 @@ class SessionManager:
                     config_data = json.load(file)
                     
                 # Verificar si es formato antiguo (tiene "user" en lugar de "id")
-                if "session" in config_data and "user" in config_data["session"] and "id" not in config_data["session"]:
-                    from tkinter import messagebox
+                if "version" not in config_data:
                     messagebox.showinfo("Configuración Actualizada", 
                                     "Se ha detectado una configuración de versión anterior.\n\n"
                                     "Se creará una nueva configuración compatible.\n"
                                     "Deberá seleccionar su usuario nuevamente.")
-                    return self._crear_config_predeterminado()
-                
-                # Verificar si falta el campo "id" en formato nuevo
-                elif "session" in config_data and "id" not in config_data["session"]:
-                    from tkinter import messagebox
-                    messagebox.showwarning("Configuración Incompleta", 
-                                        "La configuración está incompleta.\n\n"
-                                        "Se creará una nueva configuración.\n"
-                                        "Deberá seleccionar su usuario nuevamente.")
-                    return self._crear_config_predeterminado()
+                    
+                    self._crear_config_predeterminado()
+                    self.app.db_manager.sqlite_update_to_new_version()
+                    return DEFAULT_CONFIG
                 
                 # Si está en formato correcto, devolverlo
                 return config_data
@@ -100,13 +109,11 @@ class SessionManager:
                 return self._crear_config_predeterminado()
                 
         except json.JSONDecodeError:
-            from tkinter import messagebox
             messagebox.showerror("Error de Configuración", 
                                 "El archivo de configuración está corrupto.\n\n"
                                 "Se creará una nueva configuración predeterminada.")
             return self._crear_config_predeterminado()
         except Exception as e:
-            from tkinter import messagebox
             messagebox.showerror("Error", f"Error al cargar la configuración:\n{e}")
             return DEFAULT_CONFIG
 
@@ -118,7 +125,6 @@ class SessionManager:
                 json.dump(DEFAULT_CONFIG, file, indent=4)
             return DEFAULT_CONFIG
         except Exception as e:
-            from tkinter import messagebox
             messagebox.showerror("Error", f"Error al crear el archivo de configuración:\n{e}")
             return DEFAULT_CONFIG
 
@@ -142,4 +148,59 @@ class SessionManager:
         """Desconecta al usuario."""
         self.write_config("")
         self.user = ""
+
+
+
+    def actualizar_datos_desde_servidor(self):
+        """
+        Actualiza los datos (empleados, empresas y conceptos) desde SQL Server al SQLite
+        y recarga los datos en la aplicación.
+        
+        Returns:
+            bool: True si la actualización fue exitosa, False en caso contrario
+        """
+        
+        # Verificar que hay conexión con SQL Server
+        if not self.app.sql_server_manager.conectado:
+            messagebox.showerror("Sin conexión", 
+                            "No hay conexión disponible con SQL Server.\n"
+                            "Verifique la conectividad de red.")
+            return False
+        
+        try:
+            # 1. Sincronizar empleados
+            empleados_ok = self.app.db_manager.sincronizar_empleados()
+            
+            # 2. Sincronizar empresas  
+            empresas_ok = self.app.db_manager.sincronizar_empresas()
+            
+            # 3. Sincronizar conceptos
+            conceptos_ok = self.app.db_manager.sincronizar_conceptos()
+            
+            # 4. Actualizar datos en la aplicación (solo si el usuario está logueado)
+            if self.logged_in:
+                # Recargar empleados en memoria
+                if empleados_ok:
+                    self.empleados_dict, self.empleados_df = self.app.db_manager.load_empleados_sqlite()
+                
+                # Recargar empresas y conceptos en la app (comboboxes)
+                if empresas_ok or conceptos_ok:
+                    self.app.reload_empresas_combobox_update()
+            
+            # 5. Verificar si todo fue exitoso
+            if empleados_ok and empresas_ok and conceptos_ok:
+                messagebox.showinfo("Actualización exitosa", 
+                                "Los datos han sido actualizados correctamente desde el servidor.")
+                return True
+            else:
+                messagebox.showerror("Error en actualización", 
+                                "No se pudieron actualizar todos los datos.\n"
+                                "Algunos datos pueden no estar actualizados.")
+                return False
+                
+        except Exception as e:
+            messagebox.showerror("Error de actualización", 
+                            f"Error durante la actualización de datos:\n{str(e)}")
+            return False
+
 

@@ -3,3 +3,4 @@ dist/
 temp/
 .ipynb_checkpoints/
 .vscode/
+__pycache__/

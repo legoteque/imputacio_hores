@@ -1,31 +1,43 @@
 import tkinter as tk
 from tkinter import ttk
 
-class SplashScreen:
+class SplashFrame:
     def __init__(self, root):
-        self.top = tk.Toplevel(root)
-        self.top.title("Cargando aplicación...")
-        self.top.geometry("400x150")
-        self.top.overrideredirect(True)       # Quita bordes y barra de título
-        self.top.attributes("-topmost", True)  # Mantener siempre al frente
-
-        self.progress_var = tk.DoubleVar(value=0)
-        self.progress = ttk.Progressbar(self.top, orient="horizontal", length=300,
-                                        mode="determinate", maximum=100,
-                                        variable=self.progress_var)
-        self.progress.pack(pady=10)
-
-        self.status_label = tk.Label(self.top, text="Iniciando...", font=("Calibri", 12))
-        self.status_label.pack(pady=5)
-        self.top.update()
-
+        self.root = root
+        
+        # Crear frame de splash que ocupe toda la ventana
+        self.splash_frame = tk.Frame(root, bg="#34495e")
+        self.splash_frame.pack(fill="both", expand=True)
+        
+        # Contenido del splash
+        tk.Label(self.splash_frame, text="In Extenso. Imputaciones", 
+                font=("Arial", 14, "bold"), bg="#34495e", fg="white").pack(pady=(50, 10))
+        
+        self.status_label = tk.Label(self.splash_frame, text="Iniciando aplicación...", 
+                                   font=("Arial", 10), bg="#34495e", fg="#bdc3c7")
+        self.status_label.pack(pady=(5, 10))
+        
+        # Barra de progreso
+        self.progress = ttk.Progressbar(self.splash_frame, length=300, mode='determinate')
+        self.progress.pack(pady=(10, 50))
+        self.progress['value'] = 0
+        
     def update_message(self, message):
-        self.status_label.config(text=message)
-        self.top.update()
-
+        try:
+            self.status_label.config(text=message)
+            self.root.update()
+        except tk.TclError:
+            pass
+    
     def update_progress(self, value):
-        self.progress_var.set(value)
-        self.top.update()
-
-    def destroy(self):
-        self.top.destroy()
+        try:
+            self.progress['value'] = value
+            self.root.update()
+        except tk.TclError:
+            pass
+    
+    def destroy_splash(self):
+        try:
+            self.splash_frame.destroy()
+        except tk.TclError:
+            pass

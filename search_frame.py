@@ -1,12 +1,14 @@
 import tkinter as tk
 from tkinter import ttk
 from functions import COLORES
+from functions import CustomMessageBox as messagebox
 
 class BusquedaFrame(tk.Frame):
-    def __init__(self, parent, session, label_text="Filtro:", callback=None):
+    def __init__(self, parent, session, label_text="Filtro:", callback=None, app=None):
         super().__init__(parent, bg=COLORES["rojo_oscuro"], bd=2, relief="ridge")
         self.session = session
         self.callback = callback
+        self.app = app  # Referencia a la aplicación principal
         self.empresas_dic = {}
 
         # Etiqueta de filtro
@@ -16,6 +18,7 @@ class BusquedaFrame(tk.Frame):
         self.buscador_entry = ttk.Entry(self, width=20, style="TEntry")
         self.buscador_entry.pack(side="left", padx=5, pady=5)
 
+        # Combobox
         self.combobox = ttk.Combobox(self, style="TCombobox", state="readonly")
         self.combobox.pack(side="left", expand=True, fill="x", padx=5, pady=5)
         
@@ -23,6 +26,13 @@ class BusquedaFrame(tk.Frame):
         self.buscador_entry.bind("<KeyRelease>", self.filter_combobox)
         self.combobox.bind("<<ComboboxSelected>>", self.on_selection)
 
+    def actualizar_datos(self):
+        """Función para actualizar datos desde SQL Server."""
+        if self.app and hasattr(self.app, 'session') and self.app.session:
+            self.app.session.actualizar_datos_desde_servidor()
+        else:
+
+            messagebox.showerror("Error", "No hay sesión activa para actualizar datos.")
 
     def filter_combobox(self, event):
         search_text = self.buscador_entry.get().lower().strip()
@@ -41,7 +51,6 @@ class BusquedaFrame(tk.Frame):
         if valores:
             self.combobox.current(0)
 
-
     def configurar_combobox(self, empresas_dic, seleccion=None, mostrar=True):
         """Muestra/oculta el combobox y configura sus valores y selección si se proporcionan."""
         self.empresas_dic = empresas_dic
@@ -55,7 +64,6 @@ class BusquedaFrame(tk.Frame):
                 self.combobox.set(seleccion)
         else:
             self.combobox.pack_forget()
-
     
     def habilitar_seleccion(self, enable=True):
         """
@@ -66,7 +74,6 @@ class BusquedaFrame(tk.Frame):
             self.combobox.bind("<<ComboboxSelected>>", self.on_selection)
         else:
             self.combobox.unbind("<<ComboboxSelected>>")
-
 
     def on_selection(self, event):
         if self.callback:

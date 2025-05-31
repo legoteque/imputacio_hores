@@ -1,9 +1,9 @@
 import sqlite3
 import pandas as pd
 from datetime import datetime
-from decimal import Decimal
 from typing import Dict, Any, List, Optional
 from functions import EMPLEADOS_COLS, CLIENTES_COLS, REGISTRO_COLS
+from functions import CustomMessageBox as messagebox
 
 TABLA_REGISTROS = "registros"
 
@@ -49,14 +49,12 @@ class DatabaseManager:
             
             if df_empleados is None:
                 self.conexion.rollback()
-                from tkinter import messagebox
                 messagebox.showerror("Error de Consulta", 
                                 "No se pudo ejecutar la consulta de empleados en SQL Server")
                 return False
             
             if df_empleados.empty:
                 self.conexion.rollback()
-                from tkinter import messagebox
                 messagebox.showwarning("Sin Datos", 
                                     "No se encontraron empleados activos en la base de datos.")
                 return False
@@ -68,7 +66,6 @@ class DatabaseManager:
             if not columnas_esperadas.issubset(columnas_recibidas):
                 columnas_faltantes = columnas_esperadas - columnas_recibidas
                 self.conexion.rollback()
-                from tkinter import messagebox
                 messagebox.showerror("Error de Estructura", 
                                 f"Faltan columnas esperadas: {list(columnas_faltantes)}")
                 return False
@@ -89,7 +86,6 @@ class DatabaseManager:
         except Exception as e:
             # Rollback en caso de error
             self.conexion.rollback()
-            from tkinter import messagebox
             messagebox.showerror("Error de Sincronización", 
                             f"Error al sincronizar empleados:\n\n{str(e)[:200]}...")
             return False
@@ -110,14 +106,12 @@ class DatabaseManager:
             
             if df_empresas is None:
                 self.conexion.rollback()
-                from tkinter import messagebox
                 messagebox.showerror("Error de Consulta", 
                                 "No se pudo ejecutar la consulta de empresas en SQL Server")
                 return False
             
             if df_empresas.empty:
                 self.conexion.rollback()
-                from tkinter import messagebox
                 messagebox.showwarning("Sin Datos", 
                                     "No se encontraron empresas activas en la base de datos.")
                 return False
@@ -127,7 +121,6 @@ class DatabaseManager:
             
             if df_final.empty:
                 self.conexion.rollback()
-                from tkinter import messagebox
                 messagebox.showwarning("Sin Datos Filtrados", 
                                     "No se encontraron empresas después de aplicar los filtros de origen.")
                 return False
@@ -139,7 +132,6 @@ class DatabaseManager:
             if not columnas_esperadas.issubset(columnas_recibidas):
                 columnas_faltantes = columnas_esperadas - columnas_recibidas
                 self.conexion.rollback()
-                from tkinter import messagebox
                 messagebox.showerror("Error de Estructura", 
                                 f"Faltan columnas esperadas: {list(columnas_faltantes)}")
                 return False
@@ -160,10 +152,70 @@ class DatabaseManager:
         except Exception as e:
             # Rollback en caso de error
             self.conexion.rollback()
-            from tkinter import messagebox
             messagebox.showerror("Error de Sincronización", 
                             f"Error al sincronizar empresas:\n\n{str(e)[:200]}...")
             return False
+
+
+    def sincronizar_conceptos(self):
+        """
+        Sincroniza conceptos desde SQL Server a SQLite.
+        """
+        if not self.app.sql_server_manager.comprobar_conexion():
+            return False
+        
+        # Iniciar transacción
+        try:
+            self.cursor.execute("BEGIN TRANSACTION")
+            
+            # Obtener DataFrame desde SQL Server
+            df_conceptos = self.app.sql_server_manager.obtener_conceptos_dataframe()
+            
+            if df_conceptos is None:
+                self.conexion.rollback()
+                messagebox.showerror("Error de Consulta", 
+                                "No se pudo ejecutar la consulta de conceptos en SQL Server")
+                return False
+            
+            if df_conceptos.empty:
+                self.conexion.rollback()
+                messagebox.showwarning("Sin Datos", 
+                                    "No se encontraron conceptos en la base de datos.")
+                return False
+            
+            # Validar estructura antes de guardar
+            from functions import CONCEPTOS_COLS
+            columnas_esperadas = set(CONCEPTOS_COLS.keys())
+            columnas_recibidas = set(df_conceptos.columns)
+            
+            if not columnas_esperadas.issubset(columnas_recibidas):
+                columnas_faltantes = columnas_esperadas - columnas_recibidas
+                self.conexion.rollback()
+                messagebox.showerror("Error de Estructura", 
+                                f"Faltan columnas esperadas en conceptos: {list(columnas_faltantes)}")
+                return False
+            
+            # Guardar en SQLite (reemplaza tabla completa)
+            df_conceptos.to_sql(
+                name="conceptos",
+                con=self.conexion,
+                if_exists='replace',
+                index=False,
+                method='multi'
+            )
+            
+            # Confirmar transacción
+            self.conexion.commit()
+            return True
+            
+        except Exception as e:
+            # Rollback en caso de error
+            self.conexion.rollback()
+            messagebox.showerror("Error de Sincronización", 
+                            f"Error al sincronizar conceptos:\n\n{str(e)[:200]}...")
+            return False
+
+
 
     def _aplicar_filtros_empresas(self, df_empresas):
         """
@@ -199,58 +251,8 @@ class DatabaseManager:
             return df_final
             
         except Exception as e:
-            print(f"⚠️ Error aplicando filtros de empresas: {e}")
             # En caso de error en filtros, devolver datos sin filtrar
             return df_empresas.copy()
-
-    # FUNCIÓN ADICIONAL: Sincronización con retry
-    def sincronizar_con_reintentos(self, max_intentos=3):
-        """
-        Sincronización con sistema de reintentos en caso de fallo.
-        """
-        for intento in range(1, max_intentos + 1):
-            try:
-                # Intentar reconectar si no hay conexión
-                if not self.app.sql_server_manager.conectado:
-                    if not self.app.sql_server_manager.reconectar():
-                        if intento == max_intentos:
-                            from tkinter import messagebox
-                            messagebox.showerror("Error de Conexión", 
-                                            "No se pudo establecer conexión con SQL Server después de varios intentos.")
-                            return False
-                        continue
-                
-                # Intentar sincronizar empleados
-                empleados_ok = self.sincronizar_empleados()
-                
-                # Intentar sincronizar empresas
-                empresas_ok = self.sincronizar_empresas()
-                
-                if empleados_ok and empresas_ok:
-                    return True
-                elif intento == max_intentos:
-                    from tkinter import messagebox
-                    resultado_empleados = "✅" if empleados_ok else "❌"
-                    resultado_empresas = "✅" if empresas_ok else "❌"
-                    messagebox.showwarning("Sincronización Parcial", 
-                                        f"Resultados de sincronización:\n"
-                                        f"{resultado_empleados} Empleados\n"
-                                        f"{resultado_empresas} Empresas")
-                    return empleados_ok or empresas_ok
-                
-            except Exception as e:
-                if intento == max_intentos:
-                    from tkinter import messagebox
-                    messagebox.showerror("Error de Sincronización", 
-                                    f"Error en sincronización (intento {intento}):\n{str(e)[:200]}...")
-                    return False
-                
-                # Pequeña pausa antes del siguiente intento
-                import time
-                time.sleep(1)
-        
-        return False
-
 
 
 
@@ -270,7 +272,6 @@ class DatabaseManager:
             empleados_dict = dict(zip(empleados_df['name'], empleados_df['id']))
             return empleados_dict, empleados_df
         except Exception as e:
-            from tkinter import messagebox
             messagebox.showerror("Error", f"Error al cargar empleados desde SQLite:\n{e}")
             return {}, pd.DataFrame()
 
@@ -284,23 +285,88 @@ class DatabaseManager:
             empresas_df = pd.DataFrame(empresas_data, columns=[col[0] for col in self.cursor.description])
             return empresas_df
         except Exception as e:
-            from tkinter import messagebox
             messagebox.showerror("Error", f"Error al cargar empresas desde SQLite:\n{e}")
             return pd.DataFrame()
+        
+    def load_conceptos_sqlite(self):
+        """Carga los conceptos desde SQLite en un DataFrame de pandas."""
+        
+        # Obtener el departamento del usuario desde session_manager
+        department = self.app.session.department
+        
+        # Si no hay departamento, devolver DataFrame vacío
+        if not department:
+            return pd.DataFrame()
+        
+        # Construir la query con filtro por departamento
+        # Si el departamento es FISCAL, incluir también CONTABILIDAD
+        if department == "FISCAL":
+            query = "SELECT [Cod_ concepto], [Descripcion] FROM conceptos WHERE [Cod_ modulo] IN ('FISCAL', 'CONTABILIDAD')"
+        else:
+            query = "SELECT [Cod_ concepto], [Descripcion] FROM conceptos WHERE [Cod_ modulo] = ?"
+        
+        try:
+            if department == "FISCAL":
+                self.cursor.execute(query)
+            else:
+                self.cursor.execute(query, (department,))
+                
+            conceptos_data = self.cursor.fetchall()
+            conceptos_df = pd.DataFrame(conceptos_data, columns=[col[0] for col in self.cursor.description])
+            
+            return conceptos_df
+        except Exception as e:
+            messagebox.showerror("Error", f"Error al cargar conceptos desde SQLite:\n{e}")
+            return pd.DataFrame()
 
-    def obtener_registros(self, user: str) -> List[Dict[str, Any]]:
+    def obtener_registros(self, user_id: str) -> List[Dict[str, Any]]:
         """
-        Obtiene todos los registros de un usuario específico con estado 'working'.
-        Solo se devuelven los campos que se muestran en el treeview.
+        Obtiene registros de un usuario específico con las siguientes reglas:
+        - TODOS los registros 'working' (sin importar la fecha)
+        - Solo registros 'imputado'/'imputando' del mes actual y mes anterior
+        
+        Los resultados se ordenan para mostrar primero los 'working' y luego los otros por fecha.
         """
+        from datetime import datetime
+        
+        # Calcular fechas límite
+        fecha_actual = datetime.now()
+        año_actual = fecha_actual.year
+        mes_actual = fecha_actual.month
+        
+        # Calcular mes anterior
+        if mes_actual == 1:
+            mes_anterior = 12
+            año_mes_anterior = año_actual - 1
+        else:
+            mes_anterior = mes_actual - 1
+            año_mes_anterior = año_actual
+        
+        # Crear fechas límite (primer día del mes anterior)
+        fecha_limite_inferior = f"{año_mes_anterior:04d}-{mes_anterior:02d}-01"
+        
         query = f"""
-            SELECT id, tiempo, empresa, concepto, fecha_creacion
+            SELECT id, tiempo, empresa, concepto, fecha_creacion, state
             FROM {TABLA_REGISTROS}
-            WHERE state = 'working' AND user = ?
+            WHERE user = ? 
+            AND (
+                state = 'working' 
+                OR (
+                    state IN ('imputado', 'imputando') 
+                    AND fecha_creacion >= ?
+                )
+            )
+            ORDER BY 
+                CASE 
+                    WHEN state = 'working' THEN 0 
+                    ELSE 1 
+                END,
+                fecha_creacion DESC
         """
-        self.cursor.execute(query, (user,))
+        
+        self.cursor.execute(query, (user_id, fecha_limite_inferior))
         registros = self.cursor.fetchall()
-        columnas = ["id", "tiempo", "empresa", "concepto", "fecha_creacion"]
+        columnas = ["id", "tiempo", "empresa", "concepto", "fecha_creacion", "state"]
         return [dict(zip(columnas, row)) for row in registros]
 
     def agregar_registro(self, tiempo: int, register_dic: dict, user: str, departamento: str):
@@ -408,7 +474,9 @@ class DatabaseManager:
         
         # Incluir `id` en el diccionario resultante
         columnas = ["id"] + list(self.columnas.keys())
-        return [dict(zip(columnas, row)) for row in registros]
+        resultado = [dict(zip(columnas, row)) for row in registros]
+
+        return resultado
 
     def vincular_empresa(self, empresa_anterior: str, empresa_real: str, cif_real: str) -> None:
         """
@@ -446,3 +514,108 @@ class DatabaseManager:
             self.cerrar_conexion()
         except Exception:
             pass
+
+
+
+    def sqlite_update_to_new_version(self) -> bool:
+        """
+        Reemplaza en TABLA_REGISTROS cada user (nombre) por su ID según el mapeo hardcodeado,
+        y borra el valor de 'concepto' en todos los registros con state = 'working'.
+        
+        :return: True si todo OK, False si hubo error.
+        """
+        # Diccionario de mapeo nombre -> id para la actualización
+        empleados_mapping = {
+            "MAITE ROVIRA FALCO": "000005",
+            "EVELYNE GONZALEZ LOPEZ": "000013", 
+            "ALBERT NOGUERA MIRAS": "000023",
+            "CARMEN ALONSO": "000031",
+            "MONICA SANCHEZ ZAMBRANA": "000034",
+            "ALEJANDRO DE LOS SANTOS": "000039",
+            "RAQUEL PRAT SILES": "000044",
+            "BERTHA GARCIA": "000045",
+            "MONICA TRILLO PALMERO": "000048",
+            "LAURENCE BOYER": "000050",
+            "LUCIANA MARTIN ETKIN": "000054",
+            "SUSANA NOLLA": "000062",
+            "ORIOL ALVAREZ MARSAL": "000063",
+            "ERIC TALABARDON": "000064",
+            "SUSANA COLOM ARMENGOL": "000065",
+            "OSCAR BOADELLA RABES": "000066",
+            "GERARD NAVARRO": "000067",
+            "ROSA RAMOS MERCADO": "000069",
+            "MARIA ACEBO": "000070",
+            "MA ANGELES LAVADO RICART": "000071",
+            "INES KEBAILI GARCIA": "000072",
+            "CLARA BARNES": "000073",
+            "DEBORA MACIAS": "000074",
+            "SILVIA MATAS GARCIA": "000075",
+            "MARTA AROYO": "000076",
+            "ANA VIDAO": "000077",
+            "JON LOPEZ": "000078",
+            "GABRIELA ALDUNATE": "000079",
+            "OSCAR TORRES VERGES": "000081",
+            "OSCAR TORRES": "000081",
+            "JUAN MANUEL GONZALEZ": "000083",
+            "LAURA BAEZA": "000084",
+            "MARIANA MOCANU": "009011",
+            "LAURA PLAZA DIAGO": "009017",
+            "BEATRIZ VAZQUEZ JIMENEZ": "009018",
+            "JOSE MARIA ALVAREZ OSUNA": "009039",
+            "JACKY KESLASSY": "009040",
+            "BEATRIZ MELENDEZ LEON": "009041",
+            "MERCEDES LERENA LIQUIÑANO": "009042",
+            "ISABEL RODRIGUEZ": "009044",
+            "ISABEL ROMERO": "009045",
+            "RAMON SANCHEZ": "009046",
+            "BEBA SALCEDO": "009065"
+        }
+        
+        try:
+            # Verificar si hay registros en la tabla
+            self.cursor.execute(f"SELECT COUNT(*) FROM {TABLA_REGISTROS}")
+            total_registros = self.cursor.fetchone()[0]
+            
+            if total_registros == 0:
+                messagebox.showinfo("Actualización", "No hay registros para actualizar.")
+                return True
+            
+            # Verificar qué usuarios existen actualmente en la BD
+            self.cursor.execute(f"SELECT DISTINCT user FROM {TABLA_REGISTROS} WHERE user IS NOT NULL AND user != ''")
+            usuarios_existentes = [row[0] for row in self.cursor.fetchall()]
+            
+            # Usar transacción con context manager (más seguro)
+            with self.conexion:
+                # 1) Actualizar user -> id
+                update_user_sql = f"UPDATE {TABLA_REGISTROS} SET user = ? WHERE user = ?"
+                total_actualizados = 0
+                
+                for nombre_completo, user_id in empleados_mapping.items():
+                    if nombre_completo in usuarios_existentes:
+                        self.cursor.execute(update_user_sql, (user_id, nombre_completo))
+                        filas_afectadas = self.cursor.rowcount
+                        total_actualizados += filas_afectadas
+                
+                # 2) Limpiar la columna concepto en registros 'working'
+                self.cursor.execute(f"SELECT COUNT(*) FROM {TABLA_REGISTROS} WHERE state = 'working'")
+                registros_working = self.cursor.fetchone()[0]
+                conceptos_limpiados = 0
+                
+                if registros_working > 0:
+                    clear_concept_sql = f"UPDATE {TABLA_REGISTROS} SET concepto = '' WHERE state = 'working'"
+                    self.cursor.execute(clear_concept_sql)
+                    conceptos_limpiados = self.cursor.rowcount
+            
+            # Mensaje final de éxito
+            mensaje = f"Actualización completada exitosamente:\n\n"
+            mensaje += f"• {total_actualizados} registros de usuario actualizados\n"
+            mensaje += f"• {conceptos_limpiados} conceptos limpiados"
+            messagebox.showinfo("Actualización Exitosa", mensaje)
+            return True
+                
+        except Exception as e:
+            messagebox.showerror(
+                "Error de Actualización",
+                f"Hubo un problema al actualizar usuarios o limpiar conceptos:\n{str(e)}"
+            )
+            return False

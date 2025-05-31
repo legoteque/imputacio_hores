@@ -10,12 +10,11 @@ class TreeviewManager:
 
         self.interaccion_treeview = True # Variable para controlar si el menú contextual y la posiblidad de seleccionar un registro está habilitada
         self.seleccionado = None  # Variable para mantener el registro seleccionado
+        self.filas_no_interactivas = set()  # ⭐ NUEVO: Conjunto de IDs no interactivos
 
         # Definir columnas con sus nombres adecuados (ahora "checkbox" es el primer elemento)
         self.tree = ttk.Treeview(self.frame, columns=COLUMNAS_TREE, show="headings", height=10)
         self._configurar_treeview()
-        
-        self.tree.bind("<Button-1>", self.click_izquierdo)  # Asocia el evento para capturar click izquierdo sobre el treeview
 
 
     def _configurar_treeview(self):
@@ -27,17 +26,18 @@ class TreeviewManager:
 
         # Encabezados de las columnas visibles con evento de ordenación
         self.tree.heading("checkbox", text="✓", command=self.toggle_all_checkboxes)
-        self.tree.heading("tiempo", text="Tiempo", command=lambda: self.ordenar_treeview("tiempo"))
+        self.tree.heading("fecha_creacion", text="Fecha", command=lambda: self.ordenar_treeview("fecha_creacion"))
         self.tree.heading("empresa", text="Empresa", command=lambda: self.ordenar_treeview("empresa"))
         self.tree.heading("concepto", text="Concepto", command=lambda: self.ordenar_treeview("concepto"))
-        self.tree.heading("fecha_creacion", text="Fecha", command=lambda: self.ordenar_treeview("fecha_creacion"))
+        self.tree.heading("tiempo", text="Tiempo", command=lambda: self.ordenar_treeview("tiempo"))
 
-        # Configuración de columnas visibles con ancho mínimo y stretch=False
+        # Configuración de columnas visibles
         self.tree.column("checkbox", width=20, minwidth=20, anchor="center", stretch=False)
-        self.tree.column("tiempo", width=80, minwidth=80, anchor="center", stretch=False)
-        self.tree.column("empresa", width=150, minwidth=150, anchor="center", stretch=True)
-        self.tree.column("concepto", width=150, minwidth=150, anchor="center", stretch=False)
         self.tree.column("fecha_creacion", width=100, minwidth=100, anchor="center", stretch=False)
+        self.tree.column("empresa", width=200, minwidth=150, anchor="center", stretch=True)
+        self.tree.column("concepto", width=200, minwidth=150, anchor="center", stretch=True)
+        self.tree.column("tiempo", width=80, minwidth=80, anchor="center", stretch=False)
+
 
         # Configuración de columnas ocultas (tiempo y fecha originales)
         self.tree.column("time", width=0, stretch=False)  # Oculta la columna original del tiempo
@@ -82,17 +82,37 @@ class TreeviewManager:
         # Inicialmente ocultar el frame
         self.bottom_frame.pack_forget()
 
-    def agregar_fila(self, registro_id, tiempo_formateado, empresa, concepto, fecha_formateada, tiempo_original, fecha_original):
+    def agregar_fila(self, registro_id, tiempo_formateado, empresa, concepto, fecha_formateada, 
+                tiempo_original, fecha_original, es_interactivo=True):
         """
-        Agrega una fila al Treeview.
+        Agrega una fila al Treeview con checkbox apropiado según interactividad.
         """
-        self.tree.insert("", 0, iid=str(registro_id), values=(" ", tiempo_formateado, empresa, concepto, fecha_formateada, tiempo_original, fecha_original))
+        checkbox_estado = " " if not es_interactivo else " "  
+        
+        # ✅ ORDEN CORRECTO - fecha primero, tiempo después (según títulos)
+        self.tree.insert("", "end", iid=str(registro_id), 
+                        values=(checkbox_estado, fecha_formateada, empresa, concepto, tiempo_formateado, tiempo_original, fecha_original))
+
+        
+        # ⭐ CONFIGURAR ESTILO SEGÚN INTERACTIVIDAD
+        if not es_interactivo:
+            self.filas_no_interactivas.add(str(registro_id))
+            self.tree.item(str(registro_id), tags=("no_interactivo",))
+            self.tree.tag_configure("no_interactivo", background="#f0f0f0", foreground="#888888")
 
     def actualizar_fila(self, registro_id, tiempo_formateado, empresa, concepto, fecha_formateada, tiempo_original, fecha_original):
         """
-        Actualiza una fila en el Treeview.
+        Actualiza una fila en el Treeview manteniendo su estado de interactividad.
         """
-        self.tree.item(str(registro_id), values=(" ", tiempo_formateado, empresa, concepto, fecha_formateada, tiempo_original, fecha_original))
+        # ✅ ORDEN CORRECTO - fecha primero, tiempo después
+        self.tree.item(str(registro_id), values=(" ", fecha_formateada, empresa, concepto, tiempo_formateado, tiempo_original, fecha_original))
+
+        
+        # ⭐ RESTAURAR ESTILO SI ES NO INTERACTIVA
+        if str(registro_id) in self.filas_no_interactivas:
+            self.tree.item(str(registro_id), tags=("no_interactivo",))
+            self.tree.tag_configure("no_interactivo", background="#f0f0f0", foreground="#888888")
+
 
     def borrar_fila(self, registro_id):
         """
@@ -108,7 +128,9 @@ class TreeviewManager:
         self.tree.after(10, lambda: self.tree.selection_remove(self.tree.selection()))
 
     def limpiar_tree(self):
+        """Limpia el TreeView y reinicia el conjunto de filas no interactivas."""
         self.tree.delete(*self.tree.get_children())
+        self.filas_no_interactivas.clear()  # ⭐ LIMPIAR CONJUNTO
 
     def ordenar_treeview(self, columna):
         """
@@ -125,7 +147,6 @@ class TreeviewManager:
 
         for item in self.tree.get_children(""):
             valor = self.tree.set(item, columna_orden)
-            #print(f"Item: {item}, Valor en columna '{columna_orden}': {valor}")
 
         # Obtener todos los elementos del Treeview
         items = []
@@ -158,34 +179,50 @@ class TreeviewManager:
 
     def set_all_checkboxes(self, nuevo_estado="✔"):
         """
-        Actualizar el estado de cada checkbox en la última columna
+        Actualizar el estado de cada checkbox SOLO en las filas interactivas.
+        Las filas no interactivas NUNCA cambian su estado de checkbox.
         """
         for item in self.tree.get_children():
-            valores = self.tree.item(item, "values")
-            nuevos_valores = (nuevo_estado,) + valores[1:]  # Modificar solo la primera columna
-            self.tree.item(item, values=nuevos_valores)
+            # ⭐ SOLO MODIFICAR SI LA FILA ES INTERACTIVA
+            if item not in self.filas_no_interactivas:
+                valores = self.tree.item(item, "values")
+                nuevos_valores = (nuevo_estado,) + valores[1:]  # Modificar solo la primera columna
+                self.tree.item(item, values=nuevos_valores)
 
         # Verificar si hay checkboxes seleccionados
         self.actualizar_estado_frame()
     
     def toggle_all_checkboxes(self):
         """
-        Marca o desmarca todos los checkboxes en el Treeview.
+        Marca o desmarca todos los checkboxes SOLO en las filas interactivas.
+        Las filas no interactivas nunca se ven afectadas.
         """
-        # Verificar si todos los checkboxes están marcados (última columna)
-        todos_seleccionados = all(self.tree.item(item, "values")[0] == "✔" for item in self.tree.get_children())
+        # ⭐ VERIFICAR SOLO LAS FILAS INTERACTIVAS PARA DETERMINAR EL ESTADO
+        filas_interactivas = [item for item in self.tree.get_children() if item not in self.filas_no_interactivas]
+        
+        if not filas_interactivas:
+            return  # Si no hay filas interactivas, no hacer nada
+        
+        # Verificar si todas las filas INTERACTIVAS están marcadas
+        todos_seleccionados = all(
+            self.tree.item(item, "values")[0] == "✔" 
+            for item in filas_interactivas
+        )
 
-        #print("todos seleccionados?", todos_seleccionados)
-
-        # Determinar el nuevo estado a aplicar
+        # Determinar el nuevo estado a aplicar (solo a filas interactivas)
         nuevo_estado = " " if todos_seleccionados else "✔"
 
+        # ⭐ APLICAR SOLO A FILAS INTERACTIVAS
         self.set_all_checkboxes(nuevo_estado)
+
 
     def toggle_single_checkbox(self, item):
         """
-        Alterna el estado de un solo checkbox en el Treeview.
+        Solo permite toggle de checkbox en filas interactivas.
         """
+        if item in self.filas_no_interactivas:
+            return  # No hacer nada si la fila no es interactiva
+        
         valores = self.tree.item(item, "values")
         checkbox_state = valores[0]  # Primera columna
 
@@ -202,10 +239,15 @@ class TreeviewManager:
 
     def actualizar_estado_frame(self):
         """
-        Muestra u oculta el frame inferior si hay algun checkbox seleccionado.
+        Muestra u oculta el frame inferior si hay algún checkbox marcado EN FILAS INTERACTIVAS.
+        Solo considera las filas interactivas para determinar si mostrar botones.
         """
-        # Verificar si hay al menos un checkbox marcado
-        hay_seleccionados = any(self.tree.item(item, "values")[0] == "✔" for item in self.tree.get_children())
+        # ⭐ VERIFICAR SOLO CHECKBOXES DE FILAS INTERACTIVAS
+        hay_seleccionados = any(
+            self.tree.item(item, "values")[0] == "✔" 
+            for item in self.tree.get_children() 
+            if item not in self.filas_no_interactivas  # Solo filas interactivas
+        )
         
         if hay_seleccionados:
             # Mostrar el frame si no está visible
@@ -215,6 +257,7 @@ class TreeviewManager:
             # Ocultar el frame si no hay checkboxes seleccionados
             if self.bottom_frame.winfo_ismapped():
                 self.bottom_frame.pack_forget()
+
 
     def actualizar_encabezados(self, columna_ordenada):
         """
@@ -236,9 +279,8 @@ class TreeviewManager:
     def click_izquierdo(self, event):
         """
         Maneja el clic izquierdo en el Treeview.
-        Siempre deselecciona filas, pero el resto del proceso depende de si está habilitado o no.
+        Ignora clics en filas no interactivas.
         """
-        #print("click izquierdo")
         self.deseleccionar_fila()  # Siempre ejecuta esto
 
         if not self.interaccion_treeview:
@@ -249,11 +291,12 @@ class TreeviewManager:
             column = self.tree.identify_column(event.x)
             item = self.tree.identify_row(event.y)
 
-            # Depuración: Mostrar información del clic
-            #print(f"Clic izquierdo: región={region}, columna={column}, fila={item}")
-
             if not item:
                 return  # Si no se identifica una fila, no hacer nada
+
+            # ⭐ VERIFICAR SI LA FILA ES NO INTERACTIVA
+            if item in self.filas_no_interactivas:
+                return  # No hacer nada si la fila no es interactiva
 
             # Si el clic es en el encabezado de la columna checkbox
             if region == "heading":              
@@ -269,9 +312,7 @@ class TreeviewManager:
                 self.register.recuperar(item)
 
         except Exception as e:
-            #print(f"Error al manejar el clic izquierdo: {e}")
             pass
-
 
 
 
@@ -287,30 +328,21 @@ class TreeviewManager:
 
     def mostrar_menu_contextual(self, event):
         """
-        Muestra el menú contextual al hacer clic derecho sobre una fila solo si está habilitado.
-        Selecciona automáticamente la fila clicada.
+        Muestra el menú contextual solo para filas interactivas.
         """
-
         if not self.interaccion_treeview:
-            return  # No hacer nada si el menú está deshabilitado
-        
-        self.set_all_checkboxes(nuevo_estado=" ")
+            return
 
         # Identificar la fila bajo el cursor
         item = self.tree.identify_row(event.y)
-        if item:
+        if item and item not in self.filas_no_interactivas:  # ⭐ VERIFICAR INTERACTIVIDAD
+            self.set_all_checkboxes(nuevo_estado=" ")
             self.seleccionado = item
-            # Seleccionar visualmente la fila
             self.tree.selection_set(item)
             valores = self.tree.item(item)["values"]
-            # Asegurarse de que hay valores antes de configurar el menú
             if valores:
-                # Actualizar la etiqueta del menú contextual para mostrar solo el nombre de la empresa
                 self.menu_contextual.entryconfigure(0, label=valores[2])
                 self.menu_contextual.post(event.x_root, event.y_root)
-            else:
-                #print(f"No hay valores en la fila {item}.")
-                self.seleccionado = None
         else:
             self.seleccionado = None
 
@@ -318,10 +350,7 @@ class TreeviewManager:
     def color_fila(self, color="white", id_fila=None):
         """
         Cambia el color de una fila específica en el Treeview o restablece todas las filas a blanco.
-
-        Parámetros:
-            color (str): Color a aplicar ("green", "white", etc.). Por defecto es "white".
-            id_fila (int/str): ID de la fila a la que se aplicará el color. Si es None, se restablecen todas las filas.
+        RESPETA siempre el estilo de las filas no interactivas.
         """
         children = self.tree.get_children()
 
@@ -331,17 +360,22 @@ class TreeviewManager:
         id_fila = str(id_fila)  # Convertir a str para asegurar coincidencia con get_children()
 
         if color == "white":
-            # Restablecer todas las filas a fondo blanco y texto negro
+            # Restablecer todas las filas a fondo blanco, EXCEPTO las no interactivas
             for fila in children:
-                self.tree.item(fila, tags=("default",))  # Elimina los tags para restaurar el color original
+                if fila not in self.filas_no_interactivas:  # ⭐ PROTEGER FILAS NO INTERACTIVAS
+                    self.tree.item(fila, tags=("default",))
+                # ⭐ NO TOCAR las filas no interactivas, mantienen su estilo gris
             self.tree.tag_configure("default", background="white", foreground="black")
         
         elif id_fila is not None:
-            # Aplicar el color a la fila específica
-            if id_fila in children:  # Verificar que el ID exista en el Treeview
+            # ⭐ SOLO APLICAR COLOR SI LA FILA ES INTERACTIVA
+            if id_fila in children and id_fila not in self.filas_no_interactivas:
                 if color == "green":
                     self.tree.item(id_fila, tags=("highlighted_green",))
                     self.tree.tag_configure("highlighted_green", background="green", foreground="white")
                 else:
                     self.tree.item(id_fila, tags=("highlighted",))
                     self.tree.tag_configure("highlighted", background=color, foreground="black")
+        
+        # ⭐ RECONFIGURAR SIEMPRE EL ESTILO NO INTERACTIVO PARA ASEGURAR QUE SE MANTIENE
+        self.tree.tag_configure("no_interactivo", background="#f0f0f0", foreground="#888888")

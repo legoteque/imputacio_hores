@@ -1,7 +1,9 @@
 import pyodbc
 from datetime import datetime
 import pandas as pd
-from tkinter import messagebox
+import socket
+import threading
+from functions import CustomMessageBox as messagebox
 from functions import SQLSERVER_CONFIG
 
 class SQLServerManager:
@@ -9,127 +11,154 @@ class SQLServerManager:
         self.root = root
         self.connection = None
         self.cursor = None
-        self.servidor_activo = None  # Servidor que funciona
+        self.servidor_activo = None
+        self._mensaje_mostrado = False  # ✅ BANDERA PARA EVITAR MENSAJES REPETIDOS
         self.conectado = self.comprobar_conexion()
 
     def _construir_servidor(self, servidor_base):
         """Construye la cadena del servidor con puerto si está especificado."""
-        # Añadir puerto si está configurado
         if 'port' in SQLSERVER_CONFIG and SQLSERVER_CONFIG['port']:
             return f"{servidor_base},{SQLSERVER_CONFIG['port']}"
         return servidor_base
 
+    def _test_network_connectivity(self, host, port=1433, timeout=2):
+        """Prueba rápida de conectividad de red antes de intentar pyodbc."""
+        try:
+            if ',' in host:
+                host = host.split(',')[0]
+            
+            socket.setdefaulttimeout(timeout)
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            result = sock.connect_ex((host, port))
+            sock.close()
+            return result == 0
+        except Exception:
+            return False
+
     def _probar_conexion_servidor(self, servidor):
-        """Prueba conectar a un servidor específico."""
+        """Prueba optimizada con timeouts agresivos."""
         try:
             servidor_completo = self._construir_servidor(servidor)
             
+            # Verificación rápida de red (2 segundos máximo)
+            host_para_test = servidor_completo.split(',')[0] if ',' in servidor_completo else servidor_completo
+            if not self._test_network_connectivity(host_para_test, timeout=2):
+                return False, f"No hay conectividad de red con {host_para_test}"
+            
+            # Connection string con timeouts agresivos
             connection_string = (
                 f"DRIVER={{ODBC Driver 17 for SQL Server}};"
                 f"SERVER={servidor_completo};"
                 f"DATABASE={SQLSERVER_CONFIG['database']};"
                 f"UID={SQLSERVER_CONFIG['username']};"
                 f"PWD={SQLSERVER_CONFIG['password']};"
+                f"Connection Timeout=3;"
+                f"Login Timeout=3;"
                 f"TrustServerCertificate={SQLSERVER_CONFIG.get('trust_certificate', 'yes')};"
                 f"Encrypt={SQLSERVER_CONFIG.get('encrypt', 'no')};"
-                f"Connection Timeout={SQLSERVER_CONFIG.get('connection_timeout', 8)}"
             )
             
-            connection = pyodbc.connect(connection_string)
-            cursor = connection.cursor()
+            # Conexión con timeout en thread para mayor control
+            connection_result = [None, None]
             
-            # Verificar conectividad con consulta simple
-            cursor.execute("SELECT @@VERSION, @@SERVERNAME, DB_NAME()")
-            version_info = cursor.fetchone()
+            def try_connect():
+                try:
+                    conn = pyodbc.connect(connection_string)
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT @@VERSION, @@SERVERNAME, DB_NAME()")
+                    version_info = cursor.fetchone()
+                    connection_result[0] = (conn, cursor, version_info)
+                except Exception as e:
+                    connection_result[1] = str(e)
             
-            # Si llegamos aquí, la conexión es exitosa
-            self.connection = connection
-            self.cursor = cursor
-            self.servidor_activo = servidor_completo
+            thread = threading.Thread(target=try_connect)
+            thread.daemon = True
+            thread.start()
+            thread.join(timeout=5)
             
-            return True, version_info
+            if thread.is_alive():
+                return False, "Timeout de conexión alcanzado (5 segundos)"
             
-        except pyodbc.Error as e:
+            if connection_result[0]:
+                conn, cursor, version_info = connection_result[0]
+                self.connection = conn
+                self.cursor = cursor
+                self.servidor_activo = servidor_completo
+                return True, version_info
+            else:
+                return False, connection_result[1] or "Error desconocido de conexión"
+                
+        except Exception as e:
             return False, str(e)
 
     def comprobar_conexion(self):
-        """
-        Verifica la conexión a SQL Server probando múltiples servidores.
-        Usa sistema de fallback: dominio → IP.
-        """
+        """Verificación rápida de conexión con fallback optimizado."""
         servidores = SQLSERVER_CONFIG.get('servers', [])
         
         if not servidores:
-            messagebox.showerror("Error de Configuración", 
-                               "No hay servidores configurados en SQLSERVER_CONFIG['servers']")
             return False
         
-        ultimo_error = None
-        intentos_realizados = []
-        
-        # Probar cada servidor en orden
-        for i, servidor in enumerate(servidores):
+        # Probar cada servidor con timeouts cortos
+        for servidor in servidores:
             exito, resultado = self._probar_conexion_servidor(servidor)
-            intentos_realizados.append(f"{'✅' if exito else '❌'} {servidor}")
             
             if exito:
                 return True
-            else:
-                ultimo_error = resultado
-                continue
         
-        # Si llegamos aquí, todos los servidores fallaron
-        self._mostrar_error_fallback_completo(intentos_realizados, ultimo_error)
+        # ✅ MOSTRAR ADVERTENCIA SOLO LA PRIMERA VEZ
+        if not self._mensaje_mostrado:
+            self._mostrar_advertencia_sin_conexion()
+            self._mensaje_mostrado = True
+        
         return False
 
-    def _mostrar_error_fallback_completo(self, intentos, ultimo_error):
-        """Muestra error cuando todos los servidores fallan."""
-        servidores_probados = "\n".join(intentos)
+    def _mostrar_advertencia_sin_conexion(self):
+        """Advertencia concisa y no bloqueante."""
+        mensaje = (
+            "No se pudo conectar con SQL Server.\n\n"
+            "La aplicación funcionará en modo sin conexión.\n\n"
+            "Funciones limitadas:\n"
+            "• No se actualizarán datos del servidor\n"
+            "• No se podrán subir registros automáticamente"
+        )
         
-        mensaje = (
-            f"❌ ERROR: TODOS LOS SERVIDORES FALLARON\n\n"
-            f"🔄 Intentos realizados:\n{servidores_probados}\n\n"
-            f"📋 Último error:\n{ultimo_error[:200]}...\n\n"
-            f"🔧 SOLUCIONES:\n"
-            f"• Verificar conectividad de red\n"
-            f"• Contactar administrador de sistemas\n"
-            f"• Revisar configuración de SQL Server\n"
-            f"• Comprobar credenciales"
-        )
-        messagebox.showerror("Error de Conexión", mensaje)
+        try:
+            messagebox.showwarning("Modo Sin Conexión", mensaje)
+        except:
+            pass  # Si falla el messagebox, continuar silenciosamente
 
-    def _mostrar_error_login(self):
-        """Error específico de credenciales."""
-        mensaje = (
-            f"❌ ERROR DE AUTENTICACIÓN\n\n"
-            f"Las credenciales SQL Server son incorrectas:\n\n"
-            f"👤 Usuario: {SQLSERVER_CONFIG['username']}\n"
-            f"🔑 Contraseña: {'*' * len(SQLSERVER_CONFIG['password'])}\n"
-            f"🗄️ Base de datos: {SQLSERVER_CONFIG['database']}\n"
-            f"🌐 Servidor activo: {self.servidor_activo}\n\n"
-            f"🔧 SOLUCIONES:\n"
-            f"• Verificar usuario y contraseña con el administrador\n"
-            f"• Comprobar si la cuenta está activa\n"
-            f"• Verificar que SQL Server Authentication esté habilitado"
-        )
-        messagebox.showerror("Error de Credenciales", mensaje)
+    def reconectar_rapido(self):
+        """Intenta reconectar rápidamente."""
+        self.connection = None
+        self.cursor = None
+        self.servidor_activo = None
+        
+        servidores = SQLSERVER_CONFIG.get('servers', [])
+        if servidores:
+            primer_servidor = servidores[0]
+            exito, _ = self._probar_conexion_servidor(primer_servidor)
+            self.conectado = exito
+            
+            # ✅ RESETEAR BANDERA SI SE RECONECTA EXITOSAMENTE
+            if exito:
+                self._mensaje_mostrado = False
+        
+        return self.conectado
 
-    def _mostrar_error_database(self):
-        """Error específico de base de datos."""
-        mensaje = (
-            f"❌ ERROR DE BASE DE DATOS\n\n"
-            f"No se puede acceder a la base de datos:\n"
-            f"🗄️ '{SQLSERVER_CONFIG['database']}'\n"
-            f"🌐 Servidor activo: {self.servidor_activo}\n\n"
-            f"✅ Red: Funciona correctamente\n"
-            f"✅ Credenciales: Probablemente correctas\n\n"
-            f"🔧 POSIBLES CAUSAS:\n"
-            f"• La base de datos no existe\n"
-            f"• Sin permisos de acceso a esta BD específica\n"
-            f"• Base de datos en modo mantenimiento\n"
-            f"• Nombre de BD incorrecto"
-        )
-        messagebox.showerror("Error de Base de Datos", mensaje)
+    def esta_conectado(self):
+        """Verifica si la conexión actual sigue activa."""
+        if not self.conectado or not self.connection:
+            return False
+        
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            return True
+        except:
+            self.conectado = False
+            return False
 
     def get_info_conexion(self):
         """Devuelve información de la conexión actual."""
@@ -140,28 +169,43 @@ class SQLServerManager:
             "database": SQLSERVER_CONFIG['database']
         }
 
-    def subir_registros(self, db_manager, user) -> None:
+    def subir_registros(self, db_manager, user_id) -> None:
         """Sube registros desde SQLite a SQL Server."""
-        if not self.conectado:
-            messagebox.showwarning("Sin conexión", 
-                                 "No hay conexión con SQL Server.\n"
-                                 "No se pueden subir registros.")
-            return
-
-        registros = db_manager.obtener_registros_imputando(user)
+        
+        # ✅ VERIFICAR CONEXIÓN ACTUAL Y INTENTAR RECONECTAR SI ES NECESARIO
+        conexion_disponible = self.esta_conectado()
+        
+        if not conexion_disponible:
+            # Intentar reconectar antes de proceder
+            conexion_disponible = self.reconectar_rapido()
+        
+        # Obtener registros pendientes de subir
+        registros = db_manager.obtener_registros_imputando(user_id)
+        
         if not registros:
+            return  # No hay registros para subir
+        
+        # ✅ INFORMAR AL USUARIO SEGÚN EL ESTADO DE CONEXIÓN
+        if not conexion_disponible:
+            # Sin conexión - informar que se intentará más tarde
+            mensaje = (
+                f"No hay conexión con SQL Server en este momento.\n\n"
+                f"Se han marcado {len(registros)} registro(s) para imputar.\n\n"
+                f"Los registros se subirán automáticamente cuando "
+                f"se restablezca la conexión."
+            )
+            messagebox.showwarning("Sin Conexión", mensaje)
             return
-
+        
+        # ✅ HAY CONEXIÓN - PROCEDER CON LA SUBIDA
         registros_subidos = 0
         registros_error = 0
 
         for registro in registros:
             try:
-                # Convertir fechas a datetime
                 fecha_creacion = datetime.strptime(registro["fecha_creacion"], "%Y-%m-%d %H:%M")
                 fecha_imputacion = datetime.strptime(registro["fecha_imputacion"], "%Y-%m-%d %H:%M")
                 
-                # Insertar en tabla de imputaciones
                 tabla_imputaciones = SQLSERVER_CONFIG['imputaciones_tbl']
                 insert_query = f"""
                     INSERT INTO {tabla_imputaciones} 
@@ -178,28 +222,42 @@ class SQLServerManager:
                 self.cursor.execute(insert_query, valores)
                 self.connection.commit()
 
-                # Actualizar estado en SQLite a 'imputado'
+                # Cambiar estado a 'imputado' solo si se subió exitosamente
                 db_manager.actualizar_registro(nuevos_valores={"id": registro["id"], "state": "imputado"})
                 registros_subidos += 1
                 
-            except pyodbc.Error as e:
+            except Exception as e:
                 registros_error += 1
+                # Mantener el registro como 'imputando' si falló la subida
                 messagebox.showerror("Error al subir registro", 
-                                   f"Error subiendo registro ID {registro['id']}:\n{str(e)[:200]}")
+                                f"Error subiendo registro ID {registro['id']}:\n{str(e)[:200]}")
 
-        # Resumen final solo cuando hay registros subidos
-        if registros_subidos > 0:
-            mensaje_resultado = f"✅ {registros_subidos} registros subidos correctamente"
-            if registros_error > 0:
-                mensaje_resultado += f"\n❌ {registros_error} registros con error"
-            
-            messagebox.showinfo("Registros subidos", mensaje_resultado)
+        # ✅ RESUMEN FINAL CON INFORMACIÓN CLARA
+        if registros_subidos > 0 or registros_error > 0:
+            if registros_subidos > 0 and registros_error == 0:
+                # Todo exitoso
+                mensaje_resultado = f"✅ ¡Imputación completada!\n\n{registros_subidos} registro(s) subido(s) correctamente al servidor."
+                messagebox.showinfo("Imputación Exitosa", mensaje_resultado)
+            elif registros_subidos > 0 and registros_error > 0:
+                # Parcialmente exitoso
+                mensaje_resultado = (
+                    f"⚠️ Imputación parcial:\n\n"
+                    f"✅ {registros_subidos} registro(s) subido(s) correctamente\n"
+                    f"❌ {registros_error} registro(s) con errores\n\n"
+                    f"Los registros con errores se intentarán subir más tarde."
+                )
+                messagebox.showwarning("Imputación Parcial", mensaje_resultado)
+            else:
+                # Todo falló
+                mensaje_resultado = (
+                    f"❌ Error en la imputación:\n\n"
+                    f"No se pudo subir ninguno de los {registros_error} registro(s).\n\n"
+                    f"Se intentará nuevamente más tarde."
+                )
+                messagebox.showerror("Error de Imputación", mensaje_resultado)
 
     def ejecutar_query_personalizada(self, query):
-        """
-        Ejecuta una query personalizada y devuelve los resultados como tuplas.
-        FIX: Convierte pyodbc.Row a tuplas automáticamente.
-        """
+        """Ejecuta una query personalizada y devuelve los resultados como tuplas."""
         if not self.conectado:
             messagebox.showerror("Sin conexión", 
                             "No hay conexión con SQL Server.\n"
@@ -210,7 +268,6 @@ class SQLServerManager:
             self.cursor.execute(query)
             resultados_raw = self.cursor.fetchall()
             
-            # Convertir pyodbc.Row a tuplas
             if resultados_raw and hasattr(resultados_raw[0], '__iter__'):
                 resultados = [tuple(row) for row in resultados_raw]
             else:
@@ -251,33 +308,27 @@ class SQLServerManager:
         self.connection = None
         self.cursor = None
         self.servidor_activo = None
+        # ✅ NO RESETEAR LA BANDERA AQUÍ PARA EVITAR SPAM DE MENSAJES
         self.conectado = self.comprobar_conexion()
         
         return self.conectado
 
     def ejecutar_consulta_dataframe(self, tabla_origen, columnas_deseadas, condiciones="", orden=""):
-        """
-        Ejecuta una consulta SQL Server y devuelve un DataFrame de pandas.
-        Solo muestra errores cuando algo falla.
-        """
+        """Ejecuta una consulta SQL Server y devuelve un DataFrame de pandas."""
         if not self.conectado:
             return None
         
         try:
-            # Verificar estructura de la tabla
             estructura_tabla = self.obtener_estructura_tabla(tabla_origen)
             if not estructura_tabla:
                 return None
             
             columnas_disponibles_en_tabla = [col[0] for col in estructura_tabla]
-            
-            # Filtrar solo las columnas que existen
             columnas_validas = [col for col in columnas_deseadas if col in columnas_disponibles_en_tabla]
             
             if not columnas_validas:
                 return None
             
-            # Construir query de forma segura
             columnas_query = ", ".join(f"[{col}]" for col in columnas_validas)
             query = f"SELECT {columnas_query} FROM [{tabla_origen}]"
             
@@ -287,18 +338,15 @@ class SQLServerManager:
             if orden:
                 query += f" ORDER BY {orden}"
             
-            # Ejecutar consulta
             self.cursor.execute(query)
             resultados_raw = self.cursor.fetchall()
             
             if not resultados_raw:
                 return pd.DataFrame(columns=columnas_validas)
             
-            # Convertir a DataFrame
             resultados_tuplas = [tuple(row) for row in resultados_raw]
             df = pd.DataFrame(resultados_tuplas, columns=columnas_validas)
             
-            # Verificar integridad del DataFrame
             if df.shape[1] != len(columnas_validas):
                 return None
             
@@ -310,9 +358,7 @@ class SQLServerManager:
             return None
 
     def obtener_empleados_dataframe(self):
-        """
-        Función específica para obtener empleados activos.
-        """
+        """Función específica para obtener empleados activos."""
         from functions import EMPLEADOS_COLS
         
         columnas_deseadas = list(EMPLEADOS_COLS.keys())
@@ -321,22 +367,17 @@ class SQLServerManager:
         
         df = self.ejecutar_consulta_dataframe(SQLSERVER_CONFIG['empleados_tbl'], columnas_deseadas, condiciones, orden)
         
-        # Validaciones específicas para empleados
         if df is not None and not df.empty:
-            # Filtrar empleados de departamento distinto a ADMINISTRACION
             if 'department_name' in df.columns:
                 df = df[df['department_name'] != 'ADMINISTRACION']
             
-            # Validar que hay empleados después del filtro
             if df.empty:
                 return pd.DataFrame()
         
         return df
 
     def obtener_empresas_dataframe(self):
-        """
-        Función específica para obtener empresas activas.
-        """
+        """Función específica para obtener empresas activas."""
         from functions import CLIENTES_COLS
         
         columnas_deseadas = list(CLIENTES_COLS.keys())
@@ -345,12 +386,29 @@ class SQLServerManager:
         
         df = self.ejecutar_consulta_dataframe(SQLSERVER_CONFIG['clientes_tbl'], columnas_deseadas, condiciones, orden)
         
-        # Validaciones específicas para empresas
         if df is not None and not df.empty:
-            # Limpiar datos si es necesario
             if 'name' in df.columns:
                 df = df[df['name'].notna() & (df['name'] != '')]
             if 'vat' in df.columns:
                 df = df[df['vat'].notna() & (df['vat'] != '')]
+        
+        return df
+    
+    def obtener_conceptos_dataframe(self):
+        """Función específica para obtener conceptos activos."""
+        from functions import CONCEPTOS_COLS
+        
+        columnas_deseadas = list(CONCEPTOS_COLS.keys())
+        condiciones = ""
+        orden = ""
+        
+        df = self.ejecutar_consulta_dataframe(SQLSERVER_CONFIG['conceptos_tbl'], columnas_deseadas, condiciones, orden)
+        
+        if df is not None and not df.empty:
+            if 'Descripcion' in df.columns:
+                df = df[df['Descripcion'].notna() & (df['Descripcion'] != '')]
+            
+            if 'Cod_concepto' in df.columns:
+                df = df[df['Cod_concepto'].notna() & (df['Cod_concepto'] != '')]
         
         return df
